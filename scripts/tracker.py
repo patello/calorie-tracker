@@ -391,21 +391,28 @@ def cmd_stats_week(args):
         # Calculate Averages
         completed_days = [d for d in days if d['completed'] == 1]
         completed_avg = sum(d['kcal'] for d in completed_days) / len(completed_days) if completed_days else 0
-        completed_p_avg = sum(d['protein'] for d in completed_days) / len(completed_days) if completed_days else 0
         
         today_date = date.today()
         
         mon_to_yesterday = [d for d in days if d['date'] < today_date]
         yesterday_avg = sum(d['kcal'] for d in mon_to_yesterday) / len(mon_to_yesterday) if mon_to_yesterday else 0
-        yesterday_p_avg = sum(d['protein'] for d in mon_to_yesterday) / len(mon_to_yesterday) if mon_to_yesterday else 0
         
         mon_to_today = [d for d in days if d['date'] <= today_date]
         today_avg = sum(d['kcal'] for d in mon_to_today) / len(mon_to_today) if mon_to_today else 0
-        today_p_avg = sum(d['protein'] for d in mon_to_today) / len(mon_to_today) if mon_to_today else 0
         
         # Budgets
         weekly_total = sum(d['kcal'] for d in days)
         weekly_target = goal_cal * 7 if goal_cal else 0
+        
+        # Calculate active elapsed days for average display
+        if today_date > w_sun:
+            elapsed_days = 7
+        elif today_date < w_mon:
+            elapsed_days = 0
+        else:
+            elapsed_days = (today_date - w_mon).days + 1
+            
+        avg_cal = weekly_total / elapsed_days if elapsed_days > 0 else 0
         
         # Starting Now: budget including today
         rem_days_now = [d for d in days if d['date'] >= today_date]
@@ -435,14 +442,17 @@ def cmd_stats_week(args):
         if args.compact:
             diff_cal = weekly_total - weekly_target
             diff_sign = "+" if diff_cal >= 0 else ""
-            target_str = f"/{weekly_target}" if goal_cal else ""
-            diff_str = f" ({diff_sign}{diff_cal} kcal)" if goal_cal else ""
             
-            p_comp = f" | Completed: {completed_avg:.0f} kcal ({len(completed_days)}d)" if completed_days else ""
-            p_yest = f" | Mon-Yesterday: {yesterday_avg:.0f} kcal" if mon_to_yesterday else ""
-            p_tod = f" | Mon-Today: {today_avg:.0f} kcal"
-            
-            print(f"Week {w_mon} to {w_sun}: Total {weekly_total}{target_str} kcal{diff_str}{p_comp}{p_yest}{p_tod} | Budgets: Today {budg_today}, Tomorrow {budg_tom}")
+            if goal_cal:
+                target_str = f"/{weekly_target}"
+                diff_str = f" ({diff_sign}{diff_cal} kcal)"
+                avg_str = f", daily average {avg_cal:.0f}/{goal_cal} kcal"
+            else:
+                target_str = ""
+                diff_str = ""
+                avg_str = f", daily average {avg_cal:.0f} kcal"
+                
+            print(f"Week {w_mon} to {w_sun}: Total {weekly_total}{target_str} kcal{diff_str}{avg_str}")
         else:
             print("\n" + "=" * 70)
             print(f"WEEK SUMMARY: {w_mon} to {w_sun}")
