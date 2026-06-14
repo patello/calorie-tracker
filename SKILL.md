@@ -14,13 +14,11 @@ This is a standalone, skill-first OpenClaw skill. It runs out-of-the-box using s
 
 The default SQLite database file is named `health_data.db` and is resolved relative to the current working directory (Cwd) of the running agent. To override the database path, pass the `--database PATH` option to any command.
 
-## Strict Instructions for the Agent
+## Operational Instructions for the Agent
 
-1.  **Direct and Objective Tone:** Provide calorie results and summaries directly and objectively. Focus on the numbers, goals, and trends.
-2.  **No Food Suggestions:** Do not recommend food items, portions, recipes, or dietary plans. Only log and provide analysis on requested stats.
-3.  **No Compensatory Entries:** If a food entry was logged incorrectly (e.g. wrong calorie or protein count), do not log a new positive or negative "balancing" or "corrective" entry. Instead, identify the incorrect entry's ID using the `list` or `stats day` command, and run the `update` or `delete` command to fix it.
-4.  **No Bogus Logs:** Every logged entry's description must contain only the actual name of the food or drink consumed. Do not store summaries, calorie calculations, or meta-data in the food description (e.g., do not name an entry "1875 kcal, 72g protein" to force-balance a day).
-5.  **Standardized Meal Types:** Every logged food entry must have a valid `--meal` type. By default, allowed types are: `breakfast`, `lunch`, `dinner`, `snack`, `fika`, `drink`, `dessert`, `evening`, and `other`. Valid meal types are loaded and validated dynamically from the database.
+1.  **No Compensatory Entries:** If a food entry was logged incorrectly (e.g. wrong calorie or protein count), do not log a new positive or negative "balancing" or "corrective" entry. Instead, identify the incorrect entry's ID using the `list` or `stats day` command, and run the `update` or `delete` command to fix it.
+2.  **No Bogus Logs:** Every logged entry's description must contain only the actual name of the food or drink consumed. Do not store summaries, calorie calculations, or meta-data in the food description (e.g., do not name an entry "1875 kcal, 72g protein" to force-balance a day).
+3.  **Standardized Meal Types:** Every logged food entry must have a valid `--meal` type. Allowed types are: `breakfast`, `lunch`, `dinner`, `snack`, `fika`, `drink`, `dessert`, `evening`, and `other`. Valid meal types are loaded and validated dynamically from the database.
 
 ## Day Completeness Quality Levels
 
@@ -41,11 +39,12 @@ All commands support a global `--database PATH` flag (defaulting to `./health_da
 
 ### 1. Configuration & Logging
 
-*   **Configure Daily Goal:**
+*   **Configure Daily Goal & Height:**
     ```bash
-    python scripts/tracker.py goal CALORIES [PROTEIN]
+    python scripts/tracker.py goal CALORIES [PROTEIN] [--height HEIGHT_CM]
     ```
-    Sets your target calories and optional protein goals (in grams).
+    Sets target calories, optional protein goals (in grams), and optional height in cm (used dynamically by SQLite views to compute BMI and Waist-to-Height Ratio).
+    *Example:* `python scripts/tracker.py goal 1800 120 --height 180.0`
 
 *   **Log Food Entry:**
     ```bash
@@ -63,7 +62,7 @@ All commands support a global `--database PATH` flag (defaulting to `./health_da
     ```bash
     python scripts/tracker.py update ID [--name NAME] [--cal CALORIES] [--p PROTEIN] [--c CARBS] [--f FAT] [--meal TYPE]
     ```
-    Modifies an existing entry. Only the specified flags are updated.
+    Modifies an existing entry by ID. Only the specified flags are updated.
 
 *   **Delete Food Entry:**
     ```bash
@@ -107,23 +106,23 @@ All commands support a global `--database PATH` flag (defaulting to `./health_da
     ```bash
     python scripts/tracker.py stats week [DATE] [--weeks N] [--compact]
     ```
-    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). If `--compact` is passed, it outputs a single-line summary of metrics for each week instead of printing a daily breakdown table. Displays the completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table:
+    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). If `--compact` is passed, it outputs a single-line summary of metrics for each week (including weekly totals and daily averages) instead of printing a daily breakdown table. Displays the completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table:
     `Day | Date | Kcal | Protein | Target Diff | Completeness`
 
 *   **Show Macronutrient Trends:**
     ```bash
     python scripts/tracker.py stats trend [--days N]
     ```
-    Displays 7-day, 30-day, and 90-day rolling averages of calorie and protein intake.
+    Displays 7-day, 30-day, and 90-day rolling averages of calorie and protein intake (resolved dynamically from rolling trends view).
 
 *   **Show Weight logs:**
     ```bash
     python scripts/tracker.py stats weight [--days N]
     ```
-    Displays logged weights, calculates current BMI, and computes weight change.
+    Displays logged weights, calculates current BMI dynamically using height, and shows weight change from the previous log.
 
 *   **Show Waist logs:**
     ```bash
     python scripts/tracker.py stats waist [--days N]
     ```
-    Displays logged waist measurements, calculates Waist-to-Height Ratio (WHtR), and tracks change trends.
+    Displays logged waist measurements, calculates Waist-to-Height Ratio (WHtR) dynamically, and shows waist change from the previous log.
