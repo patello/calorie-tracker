@@ -44,7 +44,7 @@ def test_goal_setting_calorie_only(temp_db):
     conn.commit()
     conn.close()
     
-    cal, p = get_goal(temp_db)
+    cal, p, h = get_goal(temp_db)
     assert cal == 2000
     assert p is None
 
@@ -55,6 +55,6 @@ def test_goal_setting_with_protein(temp_db):
     conn.commit()
     conn.close()
     
-    cal, p = get_goal(temp_db)
+    cal, p, h = get_goal(temp_db)
     assert cal == 1800
     assert p == 120.5

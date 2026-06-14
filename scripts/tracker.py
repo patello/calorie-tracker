@@ -9,10 +9,6 @@ import argparse
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
-# Height from USER.md (Patrik's baseline is 180cm)
-HEIGHT_CM = 180.0
-HEIGHT_M = HEIGHT_CM / 100.0
-
 def get_db(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -91,6 +87,12 @@ def init_db(db_path):
     if 'completed' not in columns:
         c.execute("ALTER TABLE day_notes ADD COLUMN completed INTEGER DEFAULT 0")
         
+    # Migration: Check if daily_goal has 'height_cm' column
+    c.execute("PRAGMA table_info(daily_goal)")
+    goal_columns = [row['name'] for row in c.fetchall()]
+    if 'height_cm' not in goal_columns:
+        c.execute("ALTER TABLE daily_goal ADD COLUMN height_cm REAL DEFAULT 180.0")
+        
     # Seed default meal types if table is empty
     c.execute("SELECT COUNT(*) FROM meal_types")
     if c.fetchone()[0] == 0:
@@ -100,6 +102,74 @@ def init_db(db_path):
         ]
         c.executemany("INSERT INTO meal_types (type) VALUES (?)", default_meals)
         
+    # Define SQL Views for stats calculations
+    c.execute("DROP VIEW IF EXISTS v_daily_summary")
+    c.execute('''
+        CREATE VIEW v_daily_summary AS
+        SELECT 
+            d.date,
+            COALESCE(e.total_cal, 0) as total_cal,
+            COALESCE(e.total_p, 0) as total_p,
+            COALESCE(e.entry_count, 0) as entry_count,
+            n.tracking_quality as completeness,
+            COALESCE(n.completed, 0) as completed
+        FROM (
+            SELECT date FROM entries
+            UNION
+            SELECT date FROM day_notes
+        ) d
+        LEFT JOIN (
+            SELECT 
+                date,
+                SUM(calories) as total_cal,
+                SUM(protein) as total_p,
+                COUNT(*) as entry_count
+            FROM entries
+            GROUP BY date
+        ) e ON d.date = e.date
+        LEFT JOIN day_notes n ON d.date = n.date
+    ''')
+    
+    c.execute("DROP VIEW IF EXISTS v_daily_rolling_trends")
+    c.execute('''
+        CREATE VIEW v_daily_rolling_trends AS
+        SELECT 
+            date,
+            total_cal,
+            total_p,
+            AVG(total_cal) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) as rolling_7_cal,
+            AVG(total_p) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) as rolling_7_p,
+            AVG(total_cal) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) as rolling_30_cal,
+            AVG(total_p) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) as rolling_30_p,
+            AVG(total_cal) OVER (ORDER BY date ROWS BETWEEN 89 PRECEDING AND CURRENT ROW) as rolling_90_cal,
+            AVG(total_p) OVER (ORDER BY date ROWS BETWEEN 89 PRECEDING AND CURRENT ROW) as rolling_90_p
+        FROM v_daily_summary
+    ''')
+    
+    # BMI and WHtR resolved dynamically from the daily_goal table
+    c.execute("DROP VIEW IF EXISTS v_weight_summary")
+    c.execute('''
+        CREATE VIEW v_weight_summary AS
+        SELECT 
+            date,
+            weight_kg,
+            ROUND(weight_kg / ( ( (SELECT COALESCE(height_cm, 180.0) FROM daily_goal WHERE id = 1) / 100.0 ) * ( (SELECT COALESCE(height_cm, 180.0) FROM daily_goal WHERE id = 1) / 100.0 ) ), 1) as bmi,
+            ROUND(weight_kg - LAG(weight_kg) OVER (ORDER BY date), 1) as change_kg
+        FROM weight_log
+    ''')
+    
+    c.execute("DROP VIEW IF EXISTS v_waist_summary")
+    c.execute('''
+        CREATE VIEW v_waist_summary AS
+        SELECT 
+            date,
+            waist_cm,
+            ROUND(waist_cm / (SELECT COALESCE(height_cm, 180.0) FROM daily_goal WHERE id = 1), 2) as whtr,
+            ROUND(waist_cm - LAG(waist_cm) OVER (ORDER BY date), 1) as change_cm
+        FROM body_measurements
+        WHERE waist_cm IS NOT NULL
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -117,26 +187,32 @@ def validate_meal_type(db_path, meal_type):
 
 def get_goal(db_path):
     conn = get_db(db_path)
-    row = conn.execute("SELECT calorie_goal, protein_goal FROM daily_goal WHERE id = 1").fetchone()
+    row = conn.execute("SELECT calorie_goal, protein_goal, height_cm FROM daily_goal WHERE id = 1").fetchone()
     conn.close()
     if row:
-        return row['calorie_goal'], row['protein_goal']
-    return None, None
+        return row['calorie_goal'], row['protein_goal'], row['height_cm']
+    return None, None, 180.0
 
 # ----------------- Configuration & Logging -----------------
 
 def cmd_goal(args):
     conn = get_db(args.database)
     c = conn.cursor()
+    
+    # Keep existing height if not provided
+    row = c.execute("SELECT height_cm FROM daily_goal WHERE id = 1").fetchone()
+    existing_height = row['height_cm'] if row else 180.0
+    height = args.height if args.height is not None else existing_height
+    
     c.execute('''
-        INSERT OR REPLACE INTO daily_goal (id, calorie_goal, protein_goal)
-        VALUES (1, ?, ?)
-    ''', (args.calories, args.protein))
+        INSERT OR REPLACE INTO daily_goal (id, calorie_goal, protein_goal, height_cm)
+        VALUES (1, ?, ?, ?)
+    ''', (args.calories, args.protein, height))
     conn.commit()
     conn.close()
     
     p_str = f" | {args.protein}g protein" if args.protein is not None else ""
-    print(f"Daily goal set: {args.calories} kcal{p_str}")
+    print(f"Daily goal set: {args.calories} kcal{p_str} | Height: {height} cm")
 
 def cmd_add(args):
     validate_meal_type(args.database, args.meal)
@@ -151,23 +227,18 @@ def cmd_add(args):
     entry_id = c.lastrowid
     conn.commit()
     
-    # Fetch today's totals
-    c.execute('''
-        SELECT COALESCE(SUM(calories), 0) as total_cal,
-               COALESCE(SUM(protein), 0) as total_p,
-               COUNT(*) as cnt
-        FROM entries WHERE date = ?
-    ''', (entry_date,))
-    totals = c.fetchone()
+    # Fetch today's totals from view
+    totals = c.execute('SELECT total_cal, total_p FROM v_daily_summary WHERE date = ?', (entry_date,)).fetchone()
     conn.close()
+    
+    total_cal = totals['total_cal'] if totals else args.calories
     
     p_str = f", {args.protein}g protein" if args.protein else ""
     print(f"Added entry {entry_id}: {args.food_name} ({args.calories} kcal{p_str})")
     
-    # Print status message format +[new entry kcal], [daily total]/[goal]
-    goal_cal, _ = get_goal(args.database)
+    goal_cal, _, _ = get_goal(args.database)
     goal_str = str(goal_cal) if goal_cal else "?"
-    print(f"+{args.calories} kcal, {totals['total_cal']}/{goal_str} kcal today")
+    print(f"+{args.calories} kcal, {total_cal}/{goal_str} kcal today")
 
 def cmd_list(args):
     entry_date = args.date or date.today().isoformat()
@@ -247,14 +318,14 @@ def cmd_complete(args):
 def cmd_check_complete(args):
     target_date = args.date or date.today().isoformat()
     conn = get_db(args.database)
-    row = conn.execute("SELECT tracking_quality, completed FROM day_notes WHERE date = ?", (target_date,)).fetchone()
+    row = conn.execute("SELECT completeness, completed FROM v_daily_summary WHERE date = ?", (target_date,)).fetchone()
     conn.close()
     
-    if row and row['tracking_quality'] == 'full' and row['completed'] == 1:
+    if row and row['completeness'] == 'full' and row['completed'] == 1:
         print(f"Day {target_date} is fully complete.")
         sys.exit(0)
     else:
-        q = row['tracking_quality'] if row else "unlogged"
+        q = row['completeness'] if row else "unlogged"
         print(f"Day {target_date} is NOT fully complete (status: {q}).")
         sys.exit(1)
 
@@ -287,26 +358,27 @@ def cmd_waist(args):
 def cmd_stats_day(args):
     target_date = args.date or date.today().isoformat()
     conn = get_db(args.database)
-    goal_cal, goal_p = get_goal(args.database)
+    goal_cal, goal_p, _ = get_goal(args.database)
     
     entries = conn.execute('''
         SELECT id, strftime('%H:%M', created_at) as t, meal_type, food_name, calories, protein
         FROM entries WHERE date = ? ORDER BY created_at
     ''', (target_date,)).fetchall()
     
+    # Query aggregated daily totals from view
     totals = conn.execute('''
-        SELECT COALESCE(SUM(calories), 0) as total_cal,
-               COALESCE(SUM(protein), 0) as total_p
-        FROM entries WHERE date = ?
+        SELECT total_cal, total_p, completeness
+        FROM v_daily_summary WHERE date = ?
     ''', (target_date,)).fetchone()
     
-    note = conn.execute("SELECT tracking_quality, notes FROM day_notes WHERE date = ?", (target_date,)).fetchone()
+    note = conn.execute("SELECT notes FROM day_notes WHERE date = ?", (target_date,)).fetchone()
     conn.close()
     
     print("-" * 60)
     print(f"DAY BREAKDOWN: {target_date}")
-    if note:
-        print(f"Status: {note['tracking_quality'].upper()} | Note: {note['notes'] or ''}")
+    if totals and totals['completeness']:
+        notes_str = f" | Note: {note['notes']}" if (note and note['notes']) else ""
+        print(f"Status: {totals['completeness'].upper()}{notes_str}")
     print("-" * 60)
     
     if not entries:
@@ -319,16 +391,19 @@ def cmd_stats_day(args):
         print(f"  [{e['id']}] {time_str} [{e['meal_type']}] {e['food_name']}: {e['calories']} kcal{p_str}")
         
     print("-" * 60)
+    total_cal = totals['total_cal'] if totals else 0
+    total_p = totals['total_p'] if totals else 0
+    
     if goal_cal:
-        diff = totals['total_cal'] - goal_cal
+        diff = total_cal - goal_cal
         sign = "+" if diff >= 0 else ""
-        print(f"Total: {totals['total_cal']} / {goal_cal} kcal ({sign}{diff} kcal) | {totals['total_p']:.1f}g Protein")
+        print(f"Total: {total_cal} / {goal_cal} kcal ({sign}{diff} kcal) | {total_p:.1f}g Protein")
     else:
-        print(f"Total: {totals['total_cal']} kcal | {totals['total_p']:.1f}g Protein")
+        print(f"Total: {total_cal} kcal | {total_p:.1f}g Protein")
     if goal_p:
-        diff_p = totals['total_p'] - goal_p
+        diff_p = total_p - goal_p
         sign_p = "+" if diff_p >= 0 else ""
-        print(f"Protein: {totals['total_p']:.1f} / {goal_p} g ({sign_p}{diff_p:.1f} g)")
+        print(f"Protein: {total_p:.1f} / {goal_p} g ({sign_p}{diff_p:.1f} g)")
     print("-" * 60)
 
 def cmd_stats_week(args):
@@ -340,7 +415,7 @@ def cmd_stats_week(args):
     sunday = monday + timedelta(days=6)
     
     conn = get_db(args.database)
-    goal_cal, goal_p = get_goal(args.database)
+    goal_cal, goal_p, _ = get_goal(args.database)
     
     # Build list of weeks to display
     weeks_to_process = []
@@ -350,39 +425,40 @@ def cmd_stats_week(args):
         weeks_to_process.append((w_mon, w_sun))
         
     for w_mon, w_sun in weeks_to_process:
-        # Load daily summaries
+        # Load daily summaries for the 7 days of the week in a single query from view
+        summary_rows = conn.execute('''
+            SELECT date, total_cal, total_p, completeness, completed, entry_count
+            FROM v_daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date
+        ''', (w_mon.isoformat(), w_sun.isoformat())).fetchall()
+        
+        summary_map = {r['date']: r for r in summary_rows}
+        
         days = []
         for i in range(7):
             d = w_mon + timedelta(days=i)
             d_str = d.isoformat()
             
-            # Totals
-            totals = conn.execute('''
-                SELECT COALESCE(SUM(calories), 0) as cal,
-                       COALESCE(SUM(protein), 0) as p
-                FROM entries WHERE date = ?
-            ''', (d_str,)).fetchone()
+            row = summary_map.get(d_str)
             
-            # Completeness
-            note = conn.execute("SELECT tracking_quality, completed FROM day_notes WHERE date = ?", (d_str,)).fetchone()
-            
-            # Did they actually log anything?
-            entry_count = conn.execute("SELECT COUNT(*) FROM entries WHERE date = ?", (d_str,)).fetchone()[0]
+            kcal = row['total_cal'] if row else 0
+            protein = row['total_p'] if row else 0
+            entry_count = row['entry_count'] if row else 0
+            completed_val = row['completed'] if row else 0
             
             status = "unlogged"
-            completed_val = 0
-            if note:
-                status = note['tracking_quality'] or "unlogged"
-                completed_val = note['completed'] or 0
+            if row and row['completeness']:
+                status = row['completeness']
             elif entry_count > 0:
-                status = "partial" # has entries but not marked complete
+                status = "partial"
                 
             days.append({
                 "date": d,
                 "date_str": d_str,
                 "day_name": d.strftime("%A"),
-                "kcal": totals['cal'],
-                "protein": totals['p'],
+                "kcal": kcal,
+                "protein": protein,
                 "completeness": status,
                 "completed": completed_val,
                 "has_data": entry_count > 0
@@ -498,34 +574,38 @@ def cmd_stats_trend(args):
     print("MACRONUTRIENT TRENDS (ROLLING AVERAGES)")
     print("-" * 60)
     
-    for days in [7, 30, 90]:
-        row = conn.execute('''
-            SELECT COUNT(DISTINCT date) as days_count,
-                   AVG(daily_cal) as avg_cal,
-                   AVG(daily_p) as avg_p
-            FROM (
-                SELECT date,
-                       SUM(calories) as daily_cal,
-                       SUM(protein) as daily_p
-                FROM entries
-                WHERE date >= date('now', ?)
-                GROUP BY date
-            )
-        ''', (f'-{days} days',)).fetchone()
-        
-        if row and row['days_count'] > 0:
-            p_str = f" | {row['avg_p']:.1f}g Protein" if row['avg_p'] is not None else ""
-            print(f"Last {days:2d} Days ({row['days_count']}d tracked): {row['avg_cal']:.0f} kcal{p_str}")
-        else:
-            print(f"Last {days:2d} Days: No data")
-            
+    # Query rolling averages directly from v_daily_rolling_trends up to today
+    row = conn.execute('''
+        SELECT rolling_7_cal, rolling_7_p, 
+               rolling_30_cal, rolling_30_p, 
+               rolling_90_cal, rolling_90_p
+        FROM v_daily_rolling_trends
+        WHERE date <= date('now')
+        ORDER BY date DESC LIMIT 1
+    ''').fetchone()
+    
     conn.close()
+    
+    if not row:
+        print("No trend data available.")
+        print("-" * 60)
+        return
+        
+    for days, suffix in [(7, '7'), (30, '30'), (90, '90')]:
+        cal = row[f'rolling_{suffix}_cal']
+        p = row[f'rolling_{suffix}_p']
+        
+        cal_val = f"{cal:.0f} kcal" if cal is not None else "No data"
+        p_val = f" | {p:.1f}g Protein" if p is not None else ""
+        print(f"Last {days:2d} Days: {cal_val}{p_val}")
+        
     print("-" * 60)
 
 def cmd_stats_weight(args):
     conn = get_db(args.database)
+    # Query directly from weight view
     rows = conn.execute('''
-        SELECT date, weight_kg FROM weight_log
+        SELECT date, weight_kg, bmi, change_kg FROM v_weight_summary
         WHERE date >= date('now', ?)
         ORDER BY date DESC
     ''', (f'-{args.days} days',)).fetchall()
@@ -540,8 +620,8 @@ def cmd_stats_weight(args):
         return
         
     for r in rows:
-        bmi = r['weight_kg'] / (HEIGHT_M ** 2)
-        print(f"  {r['date']}: {r['weight_kg']:.1f} kg | BMI: {bmi:.1f}")
+        ch_str = f" ({r['change_kg']:+.1f} kg)" if r['change_kg'] is not None else ""
+        print(f"  {r['date']}: {r['weight_kg']:.1f} kg | BMI: {r['bmi']:.1f}{ch_str}")
         
     if len(rows) >= 2:
         change = rows[0]['weight_kg'] - rows[-1]['weight_kg']
@@ -551,9 +631,10 @@ def cmd_stats_weight(args):
 
 def cmd_stats_waist(args):
     conn = get_db(args.database)
+    # Query directly from waist view
     rows = conn.execute('''
-        SELECT date, waist_cm FROM body_measurements
-        WHERE waist_cm IS NOT NULL AND date >= date('now', ?)
+        SELECT date, waist_cm, whtr, change_cm FROM v_waist_summary
+        WHERE date >= date('now', ?)
         ORDER BY date DESC
     ''', (f'-{args.days} days',)).fetchall()
     conn.close()
@@ -567,8 +648,8 @@ def cmd_stats_waist(args):
         return
         
     for r in rows:
-        whtr = r['waist_cm'] / HEIGHT_CM
-        print(f"  {r['date']}: {r['waist_cm']:.1f} cm | WHtR: {whtr:.2f}")
+        ch_str = f" ({r['change_cm']:+.1f} cm)" if r['change_cm'] is not None else ""
+        print(f"  {r['date']}: {r['waist_cm']:.1f} cm | WHtR: {r['whtr']:.2f}{ch_str}")
         
     if len(rows) >= 2:
         change = rows[0]['waist_cm'] - rows[-1]['waist_cm']
@@ -588,6 +669,7 @@ def main():
     p_goal = subparsers.add_parser("goal", help="Set daily calorie & protein goals")
     p_goal.add_argument("calories", type=int, help="Calorie goal (kcal)")
     p_goal.add_argument("protein", type=float, nargs="?", default=None, help="Protein goal (grams, optional)")
+    p_goal.add_argument("--height", type=float, default=None, help="Height in cm (optional, defaults to keeping current or 180.0)")
     
     # add command
     p_add = subparsers.add_parser("add", help="Add a food entry")
