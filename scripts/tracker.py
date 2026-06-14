@@ -296,20 +296,18 @@ def cmd_stats_day(args):
     
     totals = conn.execute('''
         SELECT COALESCE(SUM(calories), 0) as total_cal,
-               COALESCE(SUM(protein), 0) as total_p,
-               COALESCE(SUM(carbs), 0) as total_c,
-               COALESCE(SUM(fat), 0) as total_f
+               COALESCE(SUM(protein), 0) as total_p
         FROM entries WHERE date = ?
     ''', (target_date,)).fetchone()
     
     note = conn.execute("SELECT tracking_quality, notes FROM day_notes WHERE date = ?", (target_date,)).fetchone()
     conn.close()
     
-    print("=" * 60)
-    print(f"DAILY BREAKDOWN: {target_date}")
+    print("-" * 60)
+    print(f"DAY BREAKDOWN: {target_date}")
     if note:
         print(f"Status: {note['tracking_quality'].upper()} | Note: {note['notes'] or ''}")
-    print("=" * 60)
+    print("-" * 60)
     
     if not entries:
         print("No entries logged for this day.")
@@ -321,16 +319,17 @@ def cmd_stats_day(args):
         print(f"  [{e['id']}] {time_str} [{e['meal_type']}] {e['food_name']}: {e['calories']} kcal{p_str}")
         
     print("-" * 60)
-    print(f"TOTAL INTAKE: {totals['total_cal']} kcal | {totals['total_p']:.1f}g protein")
     if goal_cal:
         diff = totals['total_cal'] - goal_cal
         sign = "+" if diff >= 0 else ""
-        print(f"DAILY GOAL  : {goal_cal} kcal | Difference: {sign}{diff} kcal ({ (totals['total_cal']/goal_cal)*100:.1f}%)")
+        print(f"Total: {totals['total_cal']} / {goal_cal} kcal ({sign}{diff} kcal) | {totals['total_p']:.1f}g Protein")
+    else:
+        print(f"Total: {totals['total_cal']} kcal | {totals['total_p']:.1f}g Protein")
     if goal_p:
         diff_p = totals['total_p'] - goal_p
         sign_p = "+" if diff_p >= 0 else ""
-        print(f"PROTEIN GOAL: {goal_p} g    | Difference: {sign_p}{diff_p:.1f} g")
-    print("=" * 60)
+        print(f"Protein: {totals['total_p']:.1f} / {goal_p} g ({sign_p}{diff_p:.1f} g)")
+    print("-" * 60)
 
 def cmd_stats_week(args):
     target_date_str = args.date or date.today().isoformat()
@@ -351,10 +350,6 @@ def cmd_stats_week(args):
         weeks_to_process.append((w_mon, w_sun))
         
     for w_mon, w_sun in weeks_to_process:
-        print("\n" + "=" * 75)
-        print(f"WEEKLY SUMMARY: {w_mon} to {w_sun}")
-        print("=" * 75)
-        
         # Load daily summaries
         days = []
         for i in range(7):
@@ -394,34 +389,28 @@ def cmd_stats_week(args):
             })
             
         # Calculate Averages
-        # 1. Completed Days Average
         completed_days = [d for d in days if d['completed'] == 1]
         completed_avg = sum(d['kcal'] for d in completed_days) / len(completed_days) if completed_days else 0
         completed_p_avg = sum(d['protein'] for d in completed_days) / len(completed_days) if completed_days else 0
         
-        # Determine elapsed/future relative to today
         today_date = date.today()
         
-        # 2. Monday to Yesterday Average
         mon_to_yesterday = [d for d in days if d['date'] < today_date]
         yesterday_avg = sum(d['kcal'] for d in mon_to_yesterday) / len(mon_to_yesterday) if mon_to_yesterday else 0
         yesterday_p_avg = sum(d['protein'] for d in mon_to_yesterday) / len(mon_to_yesterday) if mon_to_yesterday else 0
         
-        # 3. Monday to Today Average
         mon_to_today = [d for d in days if d['date'] <= today_date]
         today_avg = sum(d['kcal'] for d in mon_to_today) / len(mon_to_today) if mon_to_today else 0
         today_p_avg = sum(d['protein'] for d in mon_to_today) / len(mon_to_today) if mon_to_today else 0
         
-        # 4. Budgets
+        # Budgets
         weekly_total = sum(d['kcal'] for d in days)
         weekly_target = goal_cal * 7 if goal_cal else 0
         
         # Starting Now: budget including today
-        # Days remaining including today
         rem_days_now = [d for d in days if d['date'] >= today_date]
         days_left_now = len(rem_days_now)
         if goal_cal:
-            # sum of calories up to yesterday
             logged_before_today = sum(d['kcal'] for d in days if d['date'] < today_date)
             remaining_target_now = weekly_target - logged_before_today - sum(d['kcal'] for d in days if d['date'] == today_date)
             budget_now = remaining_target_now / days_left_now if days_left_now > 0 else 0
@@ -438,47 +427,66 @@ def cmd_stats_week(args):
         else:
             budget_tomorrow = None
             
+        # Format budgets
+        budg_today = f"{budget_now:.0f} kcal/d" if days_left_now > 0 else "Week over"
+        budg_tom = f"{budget_tomorrow:.0f} kcal/d" if (budget_tomorrow is not None) else "Week over"
+        
         # Display Stats
-        print(f"Weekly Target: {weekly_target} kcal" if goal_cal else "Weekly Target: N/A")
-        print(f"Total Logged : {weekly_total} kcal")
-        print("-" * 75)
-        print(f"Averages:")
-        print(f"  * Completed Days Average: {completed_avg:.0f} kcal | {completed_p_avg:.1f}g Protein ({len(completed_days)} days)")
-        print(f"  * Mon-to-Yesterday Average: {yesterday_avg:.0f} kcal | {yesterday_p_avg:.1f}g Protein" if mon_to_yesterday else "  * Mon-to-Yesterday Average: N/A")
-        print(f"  * Mon-to-Today Average    : {today_avg:.0f} kcal | {today_p_avg:.1f}g Protein")
-        print("-" * 75)
-        print(f"Remaining Calorie Budgets (Daily Limit to keep under target):")
-        print(f"  * Starting Today (including today's remaining): {budget_now:.0f} kcal/day" if days_left_now > 0 else "  * Starting Today: Week is over")
-        if budget_tomorrow is not None:
-            print(f"  * Starting Tomorrow (excluding today): {budget_tomorrow:.0f} kcal/day")
+        if args.compact:
+            diff_cal = weekly_total - weekly_target
+            diff_sign = "+" if diff_cal >= 0 else ""
+            target_str = f"/{weekly_target}" if goal_cal else ""
+            diff_str = f" ({diff_sign}{diff_cal} kcal)" if goal_cal else ""
+            
+            p_comp = f" | Completed: {completed_avg:.0f} kcal ({len(completed_days)}d)" if completed_days else ""
+            p_yest = f" | Mon-Yesterday: {yesterday_avg:.0f} kcal" if mon_to_yesterday else ""
+            p_tod = f" | Mon-Today: {today_avg:.0f} kcal"
+            
+            print(f"Week {w_mon} to {w_sun}: Total {weekly_total}{target_str} kcal{diff_str}{p_comp}{p_yest}{p_tod} | Budgets: Today {budg_today}, Tomorrow {budg_tom}")
         else:
-            print("  * Starting Tomorrow: Week is over")
+            print("\n" + "=" * 70)
+            print(f"WEEK SUMMARY: {w_mon} to {w_sun}")
+            print("=" * 70)
+            diff_cal = weekly_total - weekly_target
+            diff_sign = "+" if diff_cal >= 0 else ""
             
-        # Print breakdown table
-        print("-" * 75)
-        print(f"{'Day':<10} | {'Date':<10} | {'Kcal':<6} | {'Protein':<8} | {'Target Diff':<11} | {'Completeness':<12}")
-        print("-" * 75)
-        for d in days:
-            kcal_str = f"{d['kcal']}" if d['has_data'] or d['kcal'] > 0 else "-"
-            p_str = f"{d['protein']:.0f}g" if (d['has_data'] or d['protein'] > 0) else "-"
-            
-            diff_str = "-"
-            if goal_cal and (d['has_data'] or d['kcal'] > 0):
-                diff = d['kcal'] - goal_cal
-                diff_str = f"{'+' if diff >= 0 else ''}{diff}"
+            if goal_cal:
+                print(f"Total: {weekly_total} / {weekly_target} kcal ({diff_sign}{diff_cal} kcal)")
+            else:
+                print(f"Total: {weekly_total} kcal")
                 
-            print(f"{d['day_name'][:10]:<10} | {d['date_str']:<10} | {kcal_str:<6} | {p_str:<8} | {diff_str:<11} | {d['completeness'].upper():<12}")
-        print("=" * 75)
+            print(f"Averages:")
+            print(f"  Completed: {completed_avg:.0f} kcal ({len(completed_days)}d)")
+            if mon_to_yesterday:
+                print(f"  Mon-Yesterday: {yesterday_avg:.0f} kcal")
+            print(f"  Mon-Today: {today_avg:.0f} kcal")
+            print(f"Budgets:")
+            print(f"  Today: {budg_today} | Tomorrow: {budg_tom}")
+            
+            # Print breakdown table
+            print("-" * 70)
+            print(f"{'Day':<10} | {'Date':<10} | {'Kcal':<6} | {'Protein':<8} | {'Target Diff':<11} | {'Completeness':<12}")
+            print("-" * 70)
+            for d in days:
+                kcal_str = f"{d['kcal']}" if d['has_data'] or d['kcal'] > 0 else "-"
+                p_str = f"{d['protein']:.0f}g" if (d['has_data'] or d['protein'] > 0) else "-"
+                
+                diff_str = "-"
+                if goal_cal and (d['has_data'] or d['kcal'] > 0):
+                    diff = d['kcal'] - goal_cal
+                    diff_str = f"{'+' if diff >= 0 else ''}{diff}"
+                    
+                print(f"{d['day_name'][:10]:<10} | {d['date_str']:<10} | {kcal_str:<6} | {p_str:<8} | {diff_str:<11} | {d['completeness'].upper():<12}")
+            print("=" * 70)
         
     conn.close()
 
 def cmd_stats_trend(args):
     conn = get_db(args.database)
     
-    # Query rolling averages
-    print("=" * 60)
+    print("-" * 60)
     print("MACRONUTRIENT TRENDS (ROLLING AVERAGES)")
-    print("=" * 60)
+    print("-" * 60)
     
     for days in [7, 30, 90]:
         row = conn.execute('''
@@ -496,13 +504,13 @@ def cmd_stats_trend(args):
         ''', (f'-{days} days',)).fetchone()
         
         if row and row['days_count'] > 0:
-            p_str = f" | {row['avg_p']:.1f}g protein" if row['avg_p'] is not None else ""
-            print(f"Last {days:2d} Days (tracked {row['days_count']} days): {row['avg_cal']:.0f} kcal{p_str}")
+            p_str = f" | {row['avg_p']:.1f}g Protein" if row['avg_p'] is not None else ""
+            print(f"Last {days:2d} Days ({row['days_count']}d tracked): {row['avg_cal']:.0f} kcal{p_str}")
         else:
-            print(f"Last {days:2d} Days: No data available")
+            print(f"Last {days:2d} Days: No data")
             
     conn.close()
-    print("=" * 60)
+    print("-" * 60)
 
 def cmd_stats_weight(args):
     conn = get_db(args.database)
@@ -513,16 +521,15 @@ def cmd_stats_weight(args):
     ''', (f'-{args.days} days',)).fetchall()
     conn.close()
     
-    print("=" * 60)
+    print("-" * 60)
     print(f"WEIGHT TRENDS (LAST {args.days} DAYS)")
-    print("=" * 60)
+    print("-" * 60)
     
     if not rows:
         print("No weight logs found.")
         return
         
     for r in rows:
-        # Calculate BMI (weight_kg / height_m^2)
         bmi = r['weight_kg'] / (HEIGHT_M ** 2)
         print(f"  {r['date']}: {r['weight_kg']:.1f} kg | BMI: {bmi:.1f}")
         
@@ -530,7 +537,7 @@ def cmd_stats_weight(args):
         change = rows[0]['weight_kg'] - rows[-1]['weight_kg']
         print("-" * 60)
         print(f"Total Change: {change:+.1f} kg (from {rows[-1]['weight_kg']:.1f} to {rows[0]['weight_kg']:.1f})")
-    print("=" * 60)
+    print("-" * 60)
 
 def cmd_stats_waist(args):
     conn = get_db(args.database)
@@ -541,16 +548,15 @@ def cmd_stats_waist(args):
     ''', (f'-{args.days} days',)).fetchall()
     conn.close()
     
-    print("=" * 60)
+    print("-" * 60)
     print(f"WAIST TRENDS (LAST {args.days} DAYS)")
-    print("=" * 60)
+    print("-" * 60)
     
     if not rows:
         print("No waist logs found.")
         return
         
     for r in rows:
-        # Waist-to-height ratio (waist / height)
         whtr = r['waist_cm'] / HEIGHT_CM
         print(f"  {r['date']}: {r['waist_cm']:.1f} cm | WHtR: {whtr:.2f}")
         
@@ -558,7 +564,7 @@ def cmd_stats_waist(args):
         change = rows[0]['waist_cm'] - rows[-1]['waist_cm']
         print("-" * 60)
         print(f"Total Change: {change:+.1f} cm (from {rows[-1]['waist_cm']:.1f} to {rows[0]['waist_cm']:.1f})")
-    print("=" * 60)
+    print("-" * 60)
 
 # ----------------- CLI Main parsing -----------------
 
@@ -633,6 +639,7 @@ def main():
     s_week = s_sub.add_parser("week", help="Show weekly averages and breakdown")
     s_week.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD")
     s_week.add_argument("--weeks", type=int, default=1, help="Number of weeks to show (default: 1)")
+    s_week.add_argument("--compact", action="store_true", help="Print a single-line compact summary for each week")
     
     # stats trend
     s_trend = s_sub.add_parser("trend", help="Show macronutrient rolling averages")

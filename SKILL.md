@@ -105,9 +105,9 @@ All commands support a global `--database PATH` flag (defaulting to `./health_da
 
 *   **Show Weekly Summary:**
     ```bash
-    python scripts/tracker.py stats week [DATE] [--weeks N]
+    python scripts/tracker.py stats week [DATE] [--weeks N] [--compact]
     ```
-    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). Displays the completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table:
+    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). If `--compact` is passed, it outputs a single-line summary of metrics for each week instead of printing a daily breakdown table. Displays the completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table:
     `Day | Date | Kcal | Protein | Target Diff | Completeness`
 
 *   **Show Macronutrient Trends:**
