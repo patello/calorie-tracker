@@ -1,0 +1,9 @@
+# Ignore SQLite database files and backups
+*.db
+*.db.backup*
+
+# Ignore python caches and tests
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

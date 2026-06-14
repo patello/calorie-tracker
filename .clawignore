@@ -1,0 +1,6 @@
+# Ignore test and dev configs when publishing to clawhub
+tests/
+pytest.ini
+.gitignore
+.git/
+.venv/

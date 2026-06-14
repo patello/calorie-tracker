@@ -1,0 +1,35 @@
+# Calorie Tracker OpenClaw Skill
+
+A skill-first OpenClaw skill to track daily calorie intake, macronutrients, body weight, and waist measurements locally in a SQLite database. 
+
+## Features
+
+- **No Packaging Overheads:** Zero setup or pip installs required. Runs immediately using Python's standard libraries.
+- **Dynamic Meal Types:** Allowed meal types are configured and validated directly in the SQLite database.
+- **Granular Analytics:** Subcommands for daily, weekly, trend-based, and body measurement reports.
+- **Intelligent Budgets:** Computes future daily budgets and historical averages (excluding incomplete days) to aid health coaching and planning.
+
+## CLI Usage
+
+The core script is located at `scripts/tracker.py`. It looks for `health_data.db` in your current working directory by default, or you can specify a database path via `--database PATH`.
+
+### Core Commands
+
+- **Config Goal:** `python scripts/tracker.py goal CALORIES [PROTEIN]`
+- **Log Food:** `python scripts/tracker.py add "description" CALORIES [protein] [carbs] [fat] --meal TYPE`
+- **List Food:** `python scripts/tracker.py list [DATE]`
+- **Update Entry:** `python scripts/tracker.py update ID [--name NAME] [--cal CALORIES] ...`
+- **Delete Entry:** `python scripts/tracker.py delete ID`
+- **Mark Complete:** `python scripts/tracker.py complete DATE [--completeness QUALITY]`
+- **Check Complete:** `python scripts/tracker.py check-complete [DATE]`
+- **Log Weight/Waist:** `python scripts/tracker.py weight KG` / `python scripts/tracker.py waist CM`
+
+### Reports & Statistics
+
+- **Daily Stats:** `python scripts/tracker.py stats day [DATE]`
+- **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N]`
+- **Rolling Trends:** `python scripts/tracker.py stats trend [--days N]`
+- **Weight History:** `python scripts/tracker.py stats weight [--days N]`
+- **Waist History:** `python scripts/tracker.py stats waist [--days N]`
+
+For detailed operational rules and specifications, see [SKILL.md](SKILL.md).
