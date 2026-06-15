@@ -1,5 +1,5 @@
 ---
-name: calorie-tracker
+name: caloric-intake-tracker
 description: Log and track daily calorie intake, macronutrients, body weight, and waist measurements locally in a SQLite database. Provides granular statistics, weekly averages, and future calorie budgets.
 metadata: {"openclaw": {"requires": {"bins": ["python"]}}}
 ---
