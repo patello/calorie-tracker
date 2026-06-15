@@ -9,6 +9,10 @@ import argparse
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
+# Height from USER.md (Patrik's baseline is 180cm)
+HEIGHT_CM = 180.0
+HEIGHT_M = HEIGHT_CM / 100.0
+
 def get_db(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -228,17 +232,16 @@ def cmd_add(args):
     conn.commit()
     
     # Fetch today's totals from view
-    totals = c.execute('SELECT total_cal, total_p FROM v_daily_summary WHERE date = ?', (entry_date,)).fetchone()
+    totals = c.execute('SELECT total_cal FROM v_daily_summary WHERE date = ?', (entry_date,)).fetchone()
     conn.close()
     
     total_cal = totals['total_cal'] if totals else args.calories
     
-    p_str = f", {args.protein}g protein" if args.protein else ""
-    print(f"Added entry {entry_id}: {args.food_name} ({args.calories} kcal{p_str})")
-    
     goal_cal, _, _ = get_goal(args.database)
-    goal_str = str(goal_cal) if goal_cal else "?"
-    print(f"+{args.calories} kcal, {total_cal}/{goal_str} kcal today")
+    goal_str = f"/{goal_cal}" if goal_cal else ""
+    
+    # Print harmonized Added Entry output
+    print(f"Added Entry {entry_id}: +{args.calories} ({total_cal}{goal_str})")
 
 def cmd_list(args):
     entry_date = args.date or date.today().isoformat()
@@ -286,14 +289,23 @@ def cmd_update(args):
         WHERE id = ?
     ''', (name, calories, protein, carbs, fat, meal_type, args.id))
     conn.commit()
+    
+    # Fetch date totals from view
+    entry_date = row['date']
+    totals = c.execute('SELECT total_cal FROM v_daily_summary WHERE date = ?', (entry_date,)).fetchone()
     conn.close()
     
-    print(f"Updated entry {args.id} successfully.")
+    total_cal = totals['total_cal'] if totals else 0
+    goal_cal, _, _ = get_goal(args.database)
+    goal_str = f"/{goal_cal}" if goal_cal else ""
+    
+    # Print harmonized Changed Entry output
+    print(f"Changed Entry {args.id}: +{row['calories']}->{calories} ({total_cal}{goal_str})")
 
 def cmd_delete(args):
     conn = get_db(args.database)
     c = conn.cursor()
-    row = c.execute("SELECT food_name, calories FROM entries WHERE id = ?", (args.id,)).fetchone()
+    row = c.execute("SELECT date, calories FROM entries WHERE id = ?", (args.id,)).fetchone()
     if not row:
         print(f"Error: Entry {args.id} not found.")
         conn.close()
@@ -301,8 +313,18 @@ def cmd_delete(args):
         
     c.execute("DELETE FROM entries WHERE id = ?", (args.id,))
     conn.commit()
+    
+    # Fetch date totals from view
+    entry_date = row['date']
+    totals = c.execute('SELECT total_cal FROM v_daily_summary WHERE date = ?', (entry_date,)).fetchone()
     conn.close()
-    print(f"Deleted entry {args.id}: {row['food_name']} ({row['calories']} kcal)")
+    
+    total_cal = totals['total_cal'] if totals else 0
+    goal_cal, _, _ = get_goal(args.database)
+    goal_str = f"/{goal_cal}" if goal_cal else ""
+    
+    # Print harmonized Deleted Entry output
+    print(f"Deleted Entry {args.id}: +{row['calories']} ({total_cal}{goal_str})")
 
 def cmd_complete(args):
     conn = get_db(args.database)
