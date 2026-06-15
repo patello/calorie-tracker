@@ -4,3 +4,4 @@ pytest.ini
 .gitignore
 .git/
 .venv/
+.github/
