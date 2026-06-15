@@ -300,7 +300,7 @@ def cmd_update(args):
     goal_str = f"/{goal_cal}" if goal_cal else ""
     
     # Print harmonized Changed Entry output
-    print(f"Changed Entry {args.id}: +{row['calories']}->{calories} ({total_cal}{goal_str})")
+    print(f"Changed Entry {args.id}: {row['calories']}->{calories} ({total_cal}{goal_str})")
 
 def cmd_delete(args):
     conn = get_db(args.database)
@@ -324,7 +324,7 @@ def cmd_delete(args):
     goal_str = f"/{goal_cal}" if goal_cal else ""
     
     # Print harmonized Deleted Entry output
-    print(f"Deleted Entry {args.id}: +{row['calories']} ({total_cal}{goal_str})")
+    print(f"Deleted Entry {args.id}: -{row['calories']} ({total_cal}{goal_str})")
 
 def cmd_complete(args):
     conn = get_db(args.database)

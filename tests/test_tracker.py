@@ -113,7 +113,7 @@ def test_harmonized_cli_feedback(temp_db, capsys):
     )
     cmd_update(update_args)
     captured = capsys.readouterr()
-    assert "Changed Entry 1: +350->400 (1000/1800)\n" in captured.out
+    assert "Changed Entry 1: 350->400 (1000/1800)\n" in captured.out
     
     # Delete first entry
     delete_args = argparse.Namespace(
@@ -122,5 +122,5 @@ def test_harmonized_cli_feedback(temp_db, capsys):
     )
     cmd_delete(delete_args)
     captured = capsys.readouterr()
-    assert "Deleted Entry 1: +400 (600/1800)\n" in captured.out
+    assert "Deleted Entry 1: -400 (600/1800)\n" in captured.out
 
