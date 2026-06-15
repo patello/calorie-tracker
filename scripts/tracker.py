@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
-# Height from USER.md (Patrik's baseline is 180cm)
+# Default height is 180cm
 HEIGHT_CM = 180.0
 HEIGHT_M = HEIGHT_CM / 100.0
 
