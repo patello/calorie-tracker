@@ -6,6 +6,7 @@ Consolidated Calorie Tracker CLI for local calorie and weight tracking.
 import sqlite3
 import sys
 import argparse
+import difflib
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
@@ -679,9 +680,91 @@ def cmd_stats_waist(args):
         print(f"Total Change: {change:+.1f} cm (from {rows[-1]['waist_cm']:.1f} to {rows[0]['waist_cm']:.1f})")
     print("-" * 60)
 
+def cmd_search(args):
+    conn = get_db(args.database)
+    
+    # 1. Get all unique food profiles from the database
+    profiles = conn.execute('''
+        SELECT food_name, calories, protein, carbs, fat, meal_type, COUNT(*) as count, MAX(date) as last_logged
+        FROM entries
+        GROUP BY food_name, calories, protein, carbs, fat, meal_type
+    ''').fetchall()
+    conn.close()
+    
+    if not profiles:
+        print("Database is empty. No foods registered yet.")
+        return
+
+    # 2. Filter profiles using substring and fuzzy matching
+    query_lower = args.query.lower()
+    
+    # Exact/substring matches (highest priority)
+    substring_matches = []
+    other_profiles = []
+    for p in profiles:
+        if query_lower in p['food_name'].lower():
+            substring_matches.append(p)
+        else:
+            other_profiles.append(p)
+            
+    # Fuzzy matches for remaining names using word-based SequenceMatcher
+    fuzzy_matches_with_ratio = []
+    for p in other_profiles:
+        words = p['food_name'].lower().split()
+        if not words:
+            continue
+        max_ratio = max(difflib.SequenceMatcher(None, query_lower, w).ratio() for w in words)
+        if max_ratio >= 0.6:
+            fuzzy_matches_with_ratio.append((p, max_ratio))
+            
+    # Sort fuzzy matches by similarity ratio, then count, then last_logged
+    fuzzy_matches_with_ratio = sorted(fuzzy_matches_with_ratio, key=lambda x: (x[1], x[0]['count'], x[0]['last_logged']), reverse=True)
+    fuzzy_matches = [x[0] for x in fuzzy_matches_with_ratio]
+    
+    # Sort substring matches by frequency and recency
+    substring_matches = sorted(substring_matches, key=lambda x: (x['count'], x['last_logged']), reverse=True)
+    
+    matches = (substring_matches + fuzzy_matches)[:args.limit]
+
+    if not matches:
+        print(f"No similar registered foods found for '{args.query}'")
+        return
+
+    print(f"Found {len(matches)} similar registered food(s):")
+    for r in matches:
+        p_str = f" {r['protein']:.1f}g P" if r['protein'] is not None else "no protein"
+        c_str = f" | {r['carbs']:.1f}g C" if r['carbs'] is not None else ""
+        f_str = f" | {r['fat']:.1f}g F" if r['fat'] is not None else ""
+        macros = f"({p_str}{c_str}{f_str})"
+        
+        print(f"\n  * {r['food_name']} ({r['calories']} kcal) - {r['meal_type']}")
+        print(f"    Macros: {macros}")
+        print(f"    History: Logged {r['count']}x (last used: {r['last_logged']})")
+        
+        # Build helper copy-paste command
+        cmd_macros = ""
+        if r['protein'] is not None:
+            cmd_macros += f" {r['protein']}"
+            if r['carbs'] is not None:
+                cmd_macros += f" {r['carbs']}"
+                if r['fat'] is not None:
+                    cmd_macros += f" {r['fat']}"
+                    
+        print(f"    Log command: python scripts/tracker.py add \"{r['food_name']}\" {r['calories']}{cmd_macros} --meal {r['meal_type']}")
+
 # ----------------- CLI Main parsing -----------------
 
 def main():
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+    if hasattr(sys.stderr, 'reconfigure'):
+        try:
+            sys.stderr.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
     parser = argparse.ArgumentParser(description="Consolidated Calorie Tracker CLI")
     parser.add_argument("--database", default="./health_data.db", help="Path to SQLite database file")
     
@@ -767,6 +850,11 @@ def main():
     s_wa = s_sub.add_parser("waist", help="Show waist logs and changes")
     s_wa.add_argument("--days", type=int, default=30, help="Number of days to look back")
     
+    # search command
+    p_search = subparsers.add_parser("search", help="Search previously registered foods")
+    p_search.add_argument("query", help="Food name query (supports fuzzy matching)")
+    p_search.add_argument("--limit", type=int, default=5, help="Max number of results to display")
+    
     args = parser.parse_args()
     
     # Ensure database folder exists and is initialized
@@ -803,6 +891,8 @@ def main():
             cmd_stats_weight(args)
         elif args.stats_command == "waist":
             cmd_stats_waist(args)
+    elif args.command == "search":
+        cmd_search(args)
 
 if __name__ == "__main__":
     main()

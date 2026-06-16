@@ -124,3 +124,83 @@ def test_harmonized_cli_feedback(temp_db, capsys):
     captured = capsys.readouterr()
     assert "Deleted Entry 1: -400 (600/1800)\n" in captured.out
 
+
+def test_search_command(temp_db, capsys):
+    import argparse
+    from scripts.tracker import cmd_add, cmd_search
+    
+    # 1. Add some entries for search testing
+    # Entry 1: Oatmeal (logged 2x)
+    add_args1 = argparse.Namespace(
+        database=str(temp_db),
+        food_name="Oatmeal with blueberries",
+        calories=350,
+        protein=12.0,
+        carbs=50.0,
+        fat=5.0,
+        meal="breakfast",
+        date="2026-06-14"
+    )
+    cmd_add(add_args1)
+    
+    add_args2 = argparse.Namespace(
+        database=str(temp_db),
+        food_name="Oatmeal with blueberries",
+        calories=350,
+        protein=12.0,
+        carbs=50.0,
+        fat=5.0,
+        meal="breakfast",
+        date="2026-06-15"
+    )
+    cmd_add(add_args2)
+    
+    # Entry 2: Chicken Salad (logged 1x)
+    add_args3 = argparse.Namespace(
+        database=str(temp_db),
+        food_name="Grilled chicken salad",
+        calories=450,
+        protein=40.0,
+        carbs=10.0,
+        fat=15.0,
+        meal="lunch",
+        date="2026-06-15"
+    )
+    cmd_add(add_args3)
+    
+    # Clear capture
+    capsys.readouterr()
+    
+    # 2. Test exact/substring search
+    search_args_sub = argparse.Namespace(
+        database=str(temp_db),
+        query="oat",
+        limit=5
+    )
+    cmd_search(search_args_sub)
+    captured = capsys.readouterr()
+    assert "Found 1 similar registered food(s):" in captured.out
+    assert "Oatmeal with blueberries (350 kcal) - breakfast" in captured.out
+    assert "Logged 2x (last used: 2026-06-15)" in captured.out
+    assert "Log command: python scripts/tracker.py add \"Oatmeal with blueberries\" 350 12.0 50.0 5.0 --meal breakfast" in captured.out
+
+    # 3. Test fuzzy search (e.g. typing "otmel")
+    search_args_fuzzy = argparse.Namespace(
+        database=str(temp_db),
+        query="otmel",
+        limit=5
+    )
+    cmd_search(search_args_fuzzy)
+    captured = capsys.readouterr()
+    assert "Found 1 similar registered food(s):" in captured.out
+    assert "Oatmeal with blueberries (350 kcal) - breakfast" in captured.out
+
+    # 4. Test no results found
+    search_args_none = argparse.Namespace(
+        database=str(temp_db),
+        query="pizza",
+        limit=5
+    )
+    cmd_search(search_args_none)
+    captured = capsys.readouterr()
+    assert "No similar registered foods found for 'pizza'" in captured.out
