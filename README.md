@@ -11,7 +11,13 @@ A skill-first OpenClaw skill to track daily calorie intake, macronutrients, body
 
 ## CLI Usage
 
-The core script is located at `scripts/tracker.py`. It looks for `health_data.db` in your current working directory by default, or you can specify a database path via `--database PATH`.
+The core script is located at `scripts/tracker.py`. 
+
+### Global Options
+
+The script supports two global options that must be placed *before* the subcommand:
+- `--database PATH`: Specifying a path to the database (defaults to `health_data.db` in current directory).
+- `--today YYYY-MM-DD`: Time-travel option to simulate the system date for all operations (logs, lists, budgets, averages).
 
 ### Core Commands
 
@@ -27,7 +33,7 @@ The core script is located at `scripts/tracker.py`. It looks for `health_data.db
 ### Reports & Statistics
 
 - **Daily Stats:** `python scripts/tracker.py stats day [DATE]`
-- **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N]`
+- **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N] [--compact]`
 - **Rolling Trends:** `python scripts/tracker.py stats trend [--days N]`
 - **Weight History:** `python scripts/tracker.py stats weight [--days N]`
 - **Waist History:** `python scripts/tracker.py stats waist [--days N]`

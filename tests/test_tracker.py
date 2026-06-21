@@ -204,3 +204,92 @@ def test_search_command(temp_db, capsys):
     cmd_search(search_args_none)
     captured = capsys.readouterr()
     assert "No similar registered foods found for 'pizza'" in captured.out
+
+
+def test_stats_today(temp_db, capsys):
+    import argparse
+    from scripts.tracker import cmd_add, cmd_goal, cmd_weight, cmd_waist, cmd_stats_day, cmd_stats_week, cmd_stats_trend, cmd_stats_weight, cmd_stats_waist
+
+    # 1. Set goal
+    goal_args = argparse.Namespace(
+        database=str(temp_db),
+        calories=1800,
+        protein=100.0,
+        height=180.0
+    )
+    cmd_goal(goal_args)
+
+    # 2. Add some entries
+    # Monday 2026-06-15
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Egg", calories=100, protein=10.0, carbs=1.0, fat=8.0, meal="breakfast", date="2026-06-15", today=None
+    ))
+    # Tuesday 2026-06-16
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Chicken", calories=500, protein=50.0, carbs=0.0, fat=10.0, meal="lunch", date="2026-06-16", today=None
+    ))
+    # Wednesday 2026-06-17
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Fish", calories=400, protein=40.0, carbs=2.0, fat=12.0, meal="dinner", date="2026-06-17", today=None
+    ))
+    # Thursday 2026-06-18
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Steak", calories=800, protein=60.0, carbs=0.0, fat=40.0, meal="dinner", date="2026-06-18", today=None
+    ))
+
+    # Log weights
+    cmd_weight(argparse.Namespace(database=str(temp_db), kg=80.0, date="2026-06-15", today=None))
+    cmd_weight(argparse.Namespace(database=str(temp_db), kg=79.5, date="2026-06-17", today=None))
+    cmd_weight(argparse.Namespace(database=str(temp_db), kg=79.0, date="2026-06-19", today=None))
+
+    # Log waists
+    cmd_waist(argparse.Namespace(database=str(temp_db), cm=90.0, date="2026-06-15", today=None))
+    cmd_waist(argparse.Namespace(database=str(temp_db), cm=89.5, date="2026-06-17", today=None))
+    cmd_waist(argparse.Namespace(database=str(temp_db), cm=89.0, date="2026-06-19", today=None))
+
+    # Clear capture
+    capsys.readouterr()
+
+    # 3. Test stats day --today 2026-06-16
+    day_args = argparse.Namespace(database=str(temp_db), date=None, today="2026-06-16")
+    cmd_stats_day(day_args)
+    captured = capsys.readouterr()
+    assert "DAY BREAKDOWN: 2026-06-16" in captured.out
+    assert "Chicken" in captured.out
+
+    # 4. Test stats week --today 2026-06-17 (Wednesday)
+    # The week containing June 17 has Monday=June 15, Sunday=June 21.
+    # It should only show logs up to June 17. June 18 (Steak) should be ignored.
+    week_args = argparse.Namespace(database=str(temp_db), date=None, weeks=1, compact=False, today="2026-06-17")
+    cmd_stats_week(week_args)
+    captured = capsys.readouterr()
+    # Wednesday 2026-06-17 should be visible, Thursday 2026-06-18 should be UNLOGGED
+    assert "Wednesday  | 2026-06-17 | 400" in captured.out
+    assert "Thursday   | 2026-06-18 | -" in captured.out
+    # Total should only sum up to Wednesday (100+500+400 = 1000)
+    assert "Total: 1000 / 12600 kcal" in captured.out
+
+    # 5. Test stats trend --today 2026-06-17
+    trend_args = argparse.Namespace(database=str(temp_db), days=30, today="2026-06-17")
+    cmd_stats_trend(trend_args)
+    captured = capsys.readouterr()
+    # Average of last 7 days including up to June 17:
+    # Entries: June 15 (100 kcal), June 16 (500 kcal), June 17 (400 kcal)
+    # Total calories = 1000. Under rolling trend, the rolling average for June 17 should be calculated.
+    assert "Last  7 Days:" in captured.out
+
+    # 6. Test stats weight --today 2026-06-17
+    weight_args = argparse.Namespace(database=str(temp_db), days=30, today="2026-06-17")
+    cmd_stats_weight(weight_args)
+    captured = capsys.readouterr()
+    # Weight on June 19 (79.0) should NOT be shown
+    assert "2026-06-17: 79.5 kg" in captured.out
+    assert "2026-06-19" not in captured.out
+
+    # 7. Test stats waist --today 2026-06-17
+    waist_args = argparse.Namespace(database=str(temp_db), days=30, today="2026-06-17")
+    cmd_stats_waist(waist_args)
+    captured = capsys.readouterr()
+    # Waist on June 19 (89.0) should NOT be shown
+    assert "2026-06-17: 89.5 cm" in captured.out
+    assert "2026-06-19" not in captured.out

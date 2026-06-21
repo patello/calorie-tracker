@@ -35,7 +35,9 @@ When reviewing weekly averages using the `stats week` command, use these rules t
 
 ## CLI Reference
 
-All commands support a global `--database PATH` flag (defaulting to `./health_data.db`).
+All commands support the following global flags (which must be placed *before* the subcommand):
+*   `--database PATH`: Path to SQLite database file (defaulting to `./health_data.db`).
+*   `--today YYYY-MM-DD`: Simulates today's date context for the entire command run (overrides the system clock date, affecting default logging dates, lookbacks, weekly budgets, and rolling averages).
 
 ### 1. Configuration & Logging
 
@@ -100,29 +102,28 @@ All commands support a global `--database PATH` flag (defaulting to `./health_da
     ```bash
     python scripts/tracker.py stats day [DATE]
     ```
-    Prints the chronological list of entries (with IDs), meal-type breakdowns, and progress compared to daily goals.
+    Prints the chronological list of entries (with IDs), meal-type breakdowns, and progress compared to daily goals. Defaults to today's date (or simulated `--today` date) if `DATE` is omitted.
 
 *   **Show Weekly Summary:**
     ```bash
     python scripts/tracker.py stats week [DATE] [--weeks N] [--compact]
     ```
-    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). If `--compact` is passed, it outputs a single-line summary of metrics for each week (including weekly totals and daily averages) instead of printing a daily breakdown table. Displays the completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table:
-    `Day | Date | Kcal | Protein | Target Diff | Completeness`
+    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). Defaults to today's date (or simulated `--today` date) if `DATE` is omitted. If `--compact` is passed, it outputs a single-line summary of metrics for each week. Displays completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table.
 
 *   **Show Macronutrient Trends:**
     ```bash
     python scripts/tracker.py stats trend [--days N]
     ```
-    Displays 7-day, 30-day, and 90-day rolling averages of calorie and protein intake (resolved dynamically from rolling trends view).
+    Displays 7-day, 30-day, and 90-day rolling averages of calorie and protein intake (resolved dynamically from rolling trends view) up to today.
 
 *   **Show Weight logs:**
     ```bash
     python scripts/tracker.py stats weight [--days N]
     ```
-    Displays logged weights, calculates current BMI dynamically using height, and shows weight change from the previous log.
+    Displays logged weights, BMI, and weight changes up to today.
 
 *   **Show Waist logs:**
     ```bash
     python scripts/tracker.py stats waist [--days N]
     ```
-    Displays logged waist measurements, calculates Waist-to-Height Ratio (WHtR) dynamically, and shows waist change from the previous log.
+    Displays logged waist measurements, WHtR, and waist changes up to today.

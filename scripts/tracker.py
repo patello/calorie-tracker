@@ -221,7 +221,7 @@ def cmd_goal(args):
 
 def cmd_add(args):
     validate_meal_type(args.database, args.meal)
-    entry_date = args.date or date.today().isoformat()
+    entry_date = args.date or args.today or date.today().isoformat()
     
     conn = get_db(args.database)
     c = conn.cursor()
@@ -245,7 +245,7 @@ def cmd_add(args):
     print(f"Added Entry {entry_id}: +{args.calories} ({total_cal}{goal_str})")
 
 def cmd_list(args):
-    entry_date = args.date or date.today().isoformat()
+    entry_date = args.date or args.today or date.today().isoformat()
     conn = get_db(args.database)
     rows = conn.execute('''
         SELECT id, strftime('%H:%M', created_at) as t, meal_type, food_name, calories, protein
@@ -339,7 +339,7 @@ def cmd_complete(args):
     print(f"Day {args.date} marked as completed (completeness: {args.completeness})")
 
 def cmd_check_complete(args):
-    target_date = args.date or date.today().isoformat()
+    target_date = args.date or args.today or date.today().isoformat()
     conn = get_db(args.database)
     row = conn.execute("SELECT completeness, completed FROM v_daily_summary WHERE date = ?", (target_date,)).fetchone()
     conn.close()
@@ -353,7 +353,7 @@ def cmd_check_complete(args):
         sys.exit(1)
 
 def cmd_weight(args):
-    target_date = args.date or date.today().isoformat()
+    target_date = args.date or args.today or date.today().isoformat()
     conn = get_db(args.database)
     c = conn.cursor()
     c.execute('''
@@ -365,7 +365,7 @@ def cmd_weight(args):
     print(f"Weight logged: {args.kg} kg on {target_date}")
 
 def cmd_waist(args):
-    target_date = args.date or date.today().isoformat()
+    target_date = args.date or args.today or date.today().isoformat()
     conn = get_db(args.database)
     c = conn.cursor()
     c.execute('''
@@ -379,7 +379,8 @@ def cmd_waist(args):
 # ----------------- Statistics & Reports -----------------
 
 def cmd_stats_day(args):
-    target_date = args.date or date.today().isoformat()
+    today_str = args.today or date.today().isoformat()
+    target_date = args.date or today_str
     conn = get_db(args.database)
     goal_cal, goal_p, _ = get_goal(args.database)
     
@@ -430,7 +431,10 @@ def cmd_stats_day(args):
     print("-" * 60)
 
 def cmd_stats_week(args):
-    target_date_str = args.date or date.today().isoformat()
+    today_str = args.today or date.today().isoformat()
+    today_date = date.fromisoformat(today_str)
+    
+    target_date_str = args.date or today_str
     target_date = date.fromisoformat(target_date_str)
     
     # Calculate Monday and Sunday of target week
@@ -464,6 +468,8 @@ def cmd_stats_week(args):
             d_str = d.isoformat()
             
             row = summary_map.get(d_str)
+            if d > today_date:
+                row = None
             
             kcal = row['total_cal'] if row else 0
             protein = row['total_p'] if row else 0
@@ -490,8 +496,6 @@ def cmd_stats_week(args):
         # Calculate Averages
         completed_days = [d for d in days if d['completed'] == 1]
         completed_avg = sum(d['kcal'] for d in completed_days) / len(completed_days) if completed_days else 0
-        
-        today_date = date.today()
         
         mon_to_yesterday = [d for d in days if d['date'] < today_date]
         yesterday_avg = sum(d['kcal'] for d in mon_to_yesterday) / len(mon_to_yesterday) if mon_to_yesterday else 0
@@ -592,6 +596,7 @@ def cmd_stats_week(args):
 
 def cmd_stats_trend(args):
     conn = get_db(args.database)
+    today_str = args.today or date.today().isoformat()
     
     print("-" * 60)
     print("MACRONUTRIENT TRENDS (ROLLING AVERAGES)")
@@ -603,9 +608,9 @@ def cmd_stats_trend(args):
                rolling_30_cal, rolling_30_p, 
                rolling_90_cal, rolling_90_p
         FROM v_daily_rolling_trends
-        WHERE date <= date('now')
+        WHERE date <= ?
         ORDER BY date DESC LIMIT 1
-    ''').fetchone()
+    ''', (today_str,)).fetchone()
     
     conn.close()
     
@@ -626,12 +631,13 @@ def cmd_stats_trend(args):
 
 def cmd_stats_weight(args):
     conn = get_db(args.database)
+    today_str = args.today or date.today().isoformat()
     # Query directly from weight view
     rows = conn.execute('''
         SELECT date, weight_kg, bmi, change_kg FROM v_weight_summary
-        WHERE date >= date('now', ?)
+        WHERE date <= ? AND date >= date(?, ?)
         ORDER BY date DESC
-    ''', (f'-{args.days} days',)).fetchall()
+    ''', (today_str, today_str, f'-{args.days} days')).fetchall()
     conn.close()
     
     print("-" * 60)
@@ -654,12 +660,13 @@ def cmd_stats_weight(args):
 
 def cmd_stats_waist(args):
     conn = get_db(args.database)
+    today_str = args.today or date.today().isoformat()
     # Query directly from waist view
     rows = conn.execute('''
         SELECT date, waist_cm, whtr, change_cm FROM v_waist_summary
-        WHERE date >= date('now', ?)
+        WHERE date <= ? AND date >= date(?, ?)
         ORDER BY date DESC
-    ''', (f'-{args.days} days',)).fetchall()
+    ''', (today_str, today_str, f'-{args.days} days')).fetchall()
     conn.close()
     
     print("-" * 60)
@@ -752,6 +759,12 @@ def cmd_search(args):
                     
         print(f"    Log command: python scripts/tracker.py add \"{r['food_name']}\" {r['calories']}{cmd_macros} --meal {r['meal_type']}")
 
+def valid_date(s):
+    try:
+        return date.fromisoformat(s).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid date format: '{s}'. Must be YYYY-MM-DD.")
+
 # ----------------- CLI Main parsing -----------------
 
 def main():
@@ -767,6 +780,7 @@ def main():
             pass
     parser = argparse.ArgumentParser(description="Consolidated Calorie Tracker CLI")
     parser.add_argument("--database", default="./health_data.db", help="Path to SQLite database file")
+    parser.add_argument("--today", type=valid_date, help="Simulate today's date as YYYY-MM-DD")
     
     subparsers = parser.add_subparsers(dest="command", required=True)
     
