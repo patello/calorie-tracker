@@ -315,8 +315,13 @@ def test_stats_weight_and_waist_entries(temp_db, capsys):
     cmd_stats_weight(args_def)
     out = capsys.readouterr().out
     assert "WEIGHT TRENDS (LAST 5 ENTRIES)" in out
-    assert "2026-06-15: 79.0 kg" in out
-    assert "2026-06-11: 79.8 kg" in out
+    # Verify formatting (diff right after kg, before BMI)
+    assert "2026-06-15: 79.0 kg (-0.2 kg) | BMI: N/A" in out
+    assert "2026-06-11: 79.8 kg (-0.2 kg) | BMI: N/A" in out
+    # Verify chronological order (oldest first, newest last)
+    idx_old = out.find("2026-06-11")
+    idx_new = out.find("2026-06-15")
+    assert idx_old < idx_new
     assert "2026-06-10" not in out # The 6th entry should be excluded
 
     # Case 2: Explicit entries (-N 3)
@@ -324,8 +329,12 @@ def test_stats_weight_and_waist_entries(temp_db, capsys):
     cmd_stats_weight(args_n3)
     out = capsys.readouterr().out
     assert "WEIGHT TRENDS (LAST 3 ENTRIES)" in out
-    assert "2026-06-15: 79.0 kg" in out
-    assert "2026-06-13: 79.6 kg" in out
+    assert "2026-06-15: 79.0 kg (-0.2 kg) | BMI: N/A" in out
+    assert "2026-06-13: 79.6 kg (+0.1 kg) | BMI: N/A" in out
+    # Verify order
+    idx_old = out.find("2026-06-13")
+    idx_new = out.find("2026-06-15")
+    assert idx_old < idx_new
     assert "2026-06-12" not in out
 
     # Case 3: Explicit entries "all" (-N all)
@@ -333,16 +342,19 @@ def test_stats_weight_and_waist_entries(temp_db, capsys):
     cmd_stats_weight(args_all)
     out = capsys.readouterr().out
     assert "WEIGHT TRENDS (ALL ENTRIES)" in out
-    assert "2026-06-15: 79.0 kg" in out
-    assert "2026-06-10: 80.0 kg" in out
+    assert "2026-06-15: 79.0 kg (-0.2 kg) | BMI: N/A" in out
+    assert "2026-06-10: 80.0 kg | BMI: N/A" in out # oldest has no diff
+    idx_old = out.find("2026-06-10")
+    idx_new = out.find("2026-06-15")
+    assert idx_old < idx_new
 
     # Case 4: Only days specified (--days 3 -> should not limit entries count)
     args_days3 = argparse.Namespace(database=str(temp_db), entries=None, days=3, today="2026-06-15")
     cmd_stats_weight(args_days3)
     out = capsys.readouterr().out
     assert "WEIGHT TRENDS (LAST 3 DAYS)" in out
-    assert "2026-06-15: 79.0 kg" in out
-    assert "2026-06-12: 79.5 kg" in out
+    assert "2026-06-15: 79.0 kg (-0.2 kg) | BMI: N/A" in out
+    assert "2026-06-12: 79.5 kg (-0.3 kg) | BMI: N/A" in out
     assert "2026-06-11" not in out
 
     # Case 5: Both entries and days specified (-N 2 --days 5)
@@ -350,8 +362,8 @@ def test_stats_weight_and_waist_entries(temp_db, capsys):
     cmd_stats_weight(args_both)
     out = capsys.readouterr().out
     assert "WEIGHT TRENDS (LAST 2 ENTRIES OVER LAST 5 DAYS)" in out
-    assert "2026-06-15: 79.0 kg" in out
-    assert "2026-06-14: 79.2 kg" in out
+    assert "2026-06-15: 79.0 kg (-0.2 kg) | BMI: N/A" in out
+    assert "2026-06-14: 79.2 kg (-0.4 kg) | BMI: N/A" in out
     assert "2026-06-13" not in out
 
     # Case 6: Custom entries validator validation

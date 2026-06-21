@@ -669,15 +669,18 @@ def cmd_stats_weight(args):
         print("No weight logs found.")
         return
         
+    rows = list(rows)
+    rows.reverse()
+        
     for r in rows:
         ch_str = f" ({r['change_kg']:+.1f} kg)" if r['change_kg'] is not None else ""
         bmi_str = f"{r['bmi']:.1f}" if r['bmi'] is not None else "N/A"
-        print(f"  {r['date']}: {r['weight_kg']:.1f} kg | BMI: {bmi_str}{ch_str}")
+        print(f"  {r['date']}: {r['weight_kg']:.1f} kg{ch_str} | BMI: {bmi_str}")
         
     if len(rows) >= 2:
-        change = rows[0]['weight_kg'] - rows[-1]['weight_kg']
+        change = rows[-1]['weight_kg'] - rows[0]['weight_kg']
         print("-" * 60)
-        print(f"Total Change: {change:+.1f} kg (from {rows[-1]['weight_kg']:.1f} to {rows[0]['weight_kg']:.1f})")
+        print(f"Total Change: {change:+.1f} kg (from {rows[0]['weight_kg']:.1f} to {rows[-1]['weight_kg']:.1f})")
     print("-" * 60)
 
 def cmd_stats_waist(args):
@@ -720,15 +723,18 @@ def cmd_stats_waist(args):
         print("No waist logs found.")
         return
         
+    rows = list(rows)
+    rows.reverse()
+        
     for r in rows:
         ch_str = f" ({r['change_cm']:+.1f} cm)" if r['change_cm'] is not None else ""
         whtr_str = f"{r['whtr']:.2f}" if r['whtr'] is not None else "N/A"
-        print(f"  {r['date']}: {r['waist_cm']:.1f} cm | WHtR: {whtr_str}{ch_str}")
+        print(f"  {r['date']}: {r['waist_cm']:.1f} cm{ch_str} | WHtR: {whtr_str}")
         
     if len(rows) >= 2:
-        change = rows[0]['waist_cm'] - rows[-1]['waist_cm']
+        change = rows[-1]['waist_cm'] - rows[0]['waist_cm']
         print("-" * 60)
-        print(f"Total Change: {change:+.1f} cm (from {rows[-1]['waist_cm']:.1f} to {rows[0]['waist_cm']:.1f})")
+        print(f"Total Change: {change:+.1f} cm (from {rows[0]['waist_cm']:.1f} to {rows[-1]['waist_cm']:.1f})")
     print("-" * 60)
 
 def cmd_search(args):
