@@ -279,7 +279,7 @@ def test_stats_today(temp_db, capsys):
     assert "Last  7 Days:" in captured.out
 
     # 6. Test stats weight --today 2026-06-17
-    weight_args = argparse.Namespace(database=str(temp_db), days=30, today="2026-06-17")
+    weight_args = argparse.Namespace(database=str(temp_db), days=30, entries=None, today="2026-06-17")
     cmd_stats_weight(weight_args)
     captured = capsys.readouterr()
     # Weight on June 19 (79.0) should NOT be shown
@@ -287,9 +287,81 @@ def test_stats_today(temp_db, capsys):
     assert "2026-06-19" not in captured.out
 
     # 7. Test stats waist --today 2026-06-17
-    waist_args = argparse.Namespace(database=str(temp_db), days=30, today="2026-06-17")
+    waist_args = argparse.Namespace(database=str(temp_db), days=30, entries=None, today="2026-06-17")
     cmd_stats_waist(waist_args)
     captured = capsys.readouterr()
     # Waist on June 19 (89.0) should NOT be shown
     assert "2026-06-17: 89.5 cm" in captured.out
     assert "2026-06-19" not in captured.out
+
+
+def test_stats_weight_and_waist_entries(temp_db, capsys):
+    import argparse
+    from scripts.tracker import cmd_weight, cmd_waist, cmd_stats_weight, cmd_stats_waist, entries_type
+    import pytest
+
+    # Log 6 weights/waists
+    dates = ["2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15"]
+    weights = [80.0, 79.8, 79.5, 79.6, 79.2, 79.0]
+    for d, w in zip(dates, weights):
+        cmd_weight(argparse.Namespace(database=str(temp_db), kg=w, date=d, today=None))
+        cmd_waist(argparse.Namespace(database=str(temp_db), cm=90.0 - (80.0 - w), date=d, today=None))
+
+    # Clear capture
+    capsys.readouterr()
+
+    # Case 1: Default (neither entries nor days specified -> entries=5)
+    args_def = argparse.Namespace(database=str(temp_db), entries=None, days=None, today="2026-06-15")
+    cmd_stats_weight(args_def)
+    out = capsys.readouterr().out
+    assert "WEIGHT TRENDS (LAST 5 ENTRIES)" in out
+    assert "2026-06-15: 79.0 kg" in out
+    assert "2026-06-11: 79.8 kg" in out
+    assert "2026-06-10" not in out # The 6th entry should be excluded
+
+    # Case 2: Explicit entries (-N 3)
+    args_n3 = argparse.Namespace(database=str(temp_db), entries=3, days=None, today="2026-06-15")
+    cmd_stats_weight(args_n3)
+    out = capsys.readouterr().out
+    assert "WEIGHT TRENDS (LAST 3 ENTRIES)" in out
+    assert "2026-06-15: 79.0 kg" in out
+    assert "2026-06-13: 79.6 kg" in out
+    assert "2026-06-12" not in out
+
+    # Case 3: Explicit entries "all" (-N all)
+    args_all = argparse.Namespace(database=str(temp_db), entries="all", days=None, today="2026-06-15")
+    cmd_stats_weight(args_all)
+    out = capsys.readouterr().out
+    assert "WEIGHT TRENDS (ALL ENTRIES)" in out
+    assert "2026-06-15: 79.0 kg" in out
+    assert "2026-06-10: 80.0 kg" in out
+
+    # Case 4: Only days specified (--days 3 -> should not limit entries count)
+    args_days3 = argparse.Namespace(database=str(temp_db), entries=None, days=3, today="2026-06-15")
+    cmd_stats_weight(args_days3)
+    out = capsys.readouterr().out
+    assert "WEIGHT TRENDS (LAST 3 DAYS)" in out
+    assert "2026-06-15: 79.0 kg" in out
+    assert "2026-06-12: 79.5 kg" in out
+    assert "2026-06-11" not in out
+
+    # Case 5: Both entries and days specified (-N 2 --days 5)
+    args_both = argparse.Namespace(database=str(temp_db), entries=2, days=5, today="2026-06-15")
+    cmd_stats_weight(args_both)
+    out = capsys.readouterr().out
+    assert "WEIGHT TRENDS (LAST 2 ENTRIES OVER LAST 5 DAYS)" in out
+    assert "2026-06-15: 79.0 kg" in out
+    assert "2026-06-14: 79.2 kg" in out
+    assert "2026-06-13" not in out
+
+    # Case 6: Custom entries validator validation
+    assert entries_type("all") == "all"
+    assert entries_type("ALL") == "all"
+    assert entries_type("5") == 5
+    with pytest.raises(argparse.ArgumentTypeError):
+        entries_type("0")
+    with pytest.raises(argparse.ArgumentTypeError):
+        entries_type("-1")
+    with pytest.raises(argparse.ArgumentTypeError):
+        entries_type("abc")
+

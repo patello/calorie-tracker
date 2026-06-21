@@ -118,12 +118,12 @@ All commands support the following global flags (which must be placed *before* t
 
 *   **Show Weight logs:**
     ```bash
-    python scripts/tracker.py stats weight [--days N]
+    python scripts/tracker.py stats weight [-N ENTRIES] [--days DAYS]
     ```
-    Displays logged weights, BMI, and weight changes up to today.
+    Displays logged weights, BMI, and weight changes up to today. Defaults to showing the last 5 entries (`-N 5`). Supports a positive integer or `"all"` for `-N`, and an integer number of days for `--days`.
 
 *   **Show Waist logs:**
     ```bash
-    python scripts/tracker.py stats waist [--days N]
+    python scripts/tracker.py stats waist [-N ENTRIES] [--days DAYS]
     ```
-    Displays logged waist measurements, WHtR, and waist changes up to today.
+    Displays logged waist measurements, WHtR, and waist changes up to today. Defaults to showing the last 5 entries (`-N 5`). Supports a positive integer or `"all"` for `-N`, and an integer number of days for `--days`.

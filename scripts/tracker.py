@@ -632,16 +632,37 @@ def cmd_stats_trend(args):
 def cmd_stats_weight(args):
     conn = get_db(args.database)
     today_str = args.today or date.today().isoformat()
-    # Query directly from weight view
-    rows = conn.execute('''
-        SELECT date, weight_kg, bmi, change_kg FROM v_weight_summary
-        WHERE date <= ? AND date >= date(?, ?)
-        ORDER BY date DESC
-    ''', (today_str, today_str, f'-{args.days} days')).fetchall()
+    
+    entries = args.entries
+    days = args.days
+    
+    if entries is None and days is None:
+        entries = 5
+        
+    query = 'SELECT date, weight_kg, bmi, change_kg FROM v_weight_summary WHERE date <= ?'
+    params = [today_str]
+    
+    if days is not None:
+        query += ' AND date >= date(?, ?)'
+        params.extend([today_str, f'-{days} days'])
+        
+    query += ' ORDER BY date DESC'
+    
+    if entries is not None and entries != 'all':
+        query += ' LIMIT ?'
+        params.append(entries)
+        
+    rows = conn.execute(query, params).fetchall()
     conn.close()
     
     print("-" * 60)
-    print(f"WEIGHT TRENDS (LAST {args.days} DAYS)")
+    if entries is not None and days is not None:
+        header = f"WEIGHT TRENDS (LAST {entries} ENTRIES OVER LAST {days} DAYS)"
+    elif entries is not None:
+        header = f"WEIGHT TRENDS (LAST {entries} ENTRIES)" if entries != "all" else "WEIGHT TRENDS (ALL ENTRIES)"
+    else:
+        header = f"WEIGHT TRENDS (LAST {days} DAYS)"
+    print(header)
     print("-" * 60)
     
     if not rows:
@@ -650,7 +671,8 @@ def cmd_stats_weight(args):
         
     for r in rows:
         ch_str = f" ({r['change_kg']:+.1f} kg)" if r['change_kg'] is not None else ""
-        print(f"  {r['date']}: {r['weight_kg']:.1f} kg | BMI: {r['bmi']:.1f}{ch_str}")
+        bmi_str = f"{r['bmi']:.1f}" if r['bmi'] is not None else "N/A"
+        print(f"  {r['date']}: {r['weight_kg']:.1f} kg | BMI: {bmi_str}{ch_str}")
         
     if len(rows) >= 2:
         change = rows[0]['weight_kg'] - rows[-1]['weight_kg']
@@ -661,16 +683,37 @@ def cmd_stats_weight(args):
 def cmd_stats_waist(args):
     conn = get_db(args.database)
     today_str = args.today or date.today().isoformat()
-    # Query directly from waist view
-    rows = conn.execute('''
-        SELECT date, waist_cm, whtr, change_cm FROM v_waist_summary
-        WHERE date <= ? AND date >= date(?, ?)
-        ORDER BY date DESC
-    ''', (today_str, today_str, f'-{args.days} days')).fetchall()
+    
+    entries = args.entries
+    days = args.days
+    
+    if entries is None and days is None:
+        entries = 5
+        
+    query = 'SELECT date, waist_cm, whtr, change_cm FROM v_waist_summary WHERE date <= ?'
+    params = [today_str]
+    
+    if days is not None:
+        query += ' AND date >= date(?, ?)'
+        params.extend([today_str, f'-{days} days'])
+        
+    query += ' ORDER BY date DESC'
+    
+    if entries is not None and entries != 'all':
+        query += ' LIMIT ?'
+        params.append(entries)
+        
+    rows = conn.execute(query, params).fetchall()
     conn.close()
     
     print("-" * 60)
-    print(f"WAIST TRENDS (LAST {args.days} DAYS)")
+    if entries is not None and days is not None:
+        header = f"WAIST TRENDS (LAST {entries} ENTRIES OVER LAST {days} DAYS)"
+    elif entries is not None:
+        header = f"WAIST TRENDS (LAST {entries} ENTRIES)" if entries != "all" else "WAIST TRENDS (ALL ENTRIES)"
+    else:
+        header = f"WAIST TRENDS (LAST {days} DAYS)"
+    print(header)
     print("-" * 60)
     
     if not rows:
@@ -679,7 +722,8 @@ def cmd_stats_waist(args):
         
     for r in rows:
         ch_str = f" ({r['change_cm']:+.1f} cm)" if r['change_cm'] is not None else ""
-        print(f"  {r['date']}: {r['waist_cm']:.1f} cm | WHtR: {r['whtr']:.2f}{ch_str}")
+        whtr_str = f"{r['whtr']:.2f}" if r['whtr'] is not None else "N/A"
+        print(f"  {r['date']}: {r['waist_cm']:.1f} cm | WHtR: {whtr_str}{ch_str}")
         
     if len(rows) >= 2:
         change = rows[0]['waist_cm'] - rows[-1]['waist_cm']
@@ -764,6 +808,17 @@ def valid_date(s):
         return date.fromisoformat(s).isoformat()
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid date format: '{s}'. Must be YYYY-MM-DD.")
+
+def entries_type(s):
+    if s.lower() == "all":
+        return "all"
+    try:
+        val = int(s)
+        if val <= 0:
+            raise argparse.ArgumentTypeError(f"Invalid entries value: '{s}'. Must be a positive integer or 'all'.")
+        return val
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid entries value: '{s}'. Must be a positive integer or 'all'.")
 
 # ----------------- CLI Main parsing -----------------
 
@@ -858,11 +913,13 @@ def main():
     
     # stats weight
     s_w = s_sub.add_parser("weight", help="Show weight logs and changes")
-    s_w.add_argument("--days", type=int, default=30, help="Number of days to look back")
+    s_w.add_argument("-N", "--entries", type=entries_type, default=None, help="Number of entries to show (positive integer or 'all')")
+    s_w.add_argument("--days", type=int, default=None, help="Number of days to look back")
     
     # stats waist
     s_wa = s_sub.add_parser("waist", help="Show waist logs and changes")
-    s_wa.add_argument("--days", type=int, default=30, help="Number of days to look back")
+    s_wa.add_argument("-N", "--entries", type=entries_type, default=None, help="Number of entries to show (positive integer or 'all')")
+    s_wa.add_argument("--days", type=int, default=None, help="Number of days to look back")
     
     # search command
     p_search = subparsers.add_parser("search", help="Search previously registered foods")
