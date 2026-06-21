@@ -517,45 +517,90 @@ def cmd_stats_week(args):
             
         avg_cal = weekly_total / elapsed_days if elapsed_days > 0 else 0
         
-        # Starting Now: budget including today
+        # Determine include_today mode
+        include_today_arg = getattr(args, 'include_today', 'auto')
+        if include_today_arg == 'auto':
+            if w_mon <= today_date <= w_sun:
+                today_day_dict = next((d for d in days if d['date'] == today_date), None)
+                today_is_completed = today_day_dict['completed'] == 1 if today_day_dict else False
+                include_today = 'yes' if today_is_completed else 'no'
+            elif today_date > w_sun:
+                include_today = 'yes'
+            else:
+                include_today = 'no'
+        else:
+            include_today = include_today_arg
+
+        # Calculate budgets and formatting
         rem_days_now = [d for d in days if d['date'] >= today_date]
         days_left_now = len(rem_days_now)
-        if goal_cal:
-            logged_before_today = sum(d['kcal'] for d in days if d['date'] < today_date)
-            remaining_target_now = weekly_target - logged_before_today - sum(d['kcal'] for d in days if d['date'] == today_date)
-            budget_now = remaining_target_now / days_left_now if days_left_now > 0 else 0
-        else:
-            budget_now = 0
-            
-        # Starting Tomorrow: budget excluding today
+        
         rem_days_tomorrow = [d for d in days if d['date'] > today_date]
         days_left_tomorrow = len(rem_days_tomorrow)
-        if goal_cal and days_left_tomorrow > 0:
-            logged_up_to_today = sum(d['kcal'] for d in days if d['date'] <= today_date)
-            remaining_target_tomorrow = weekly_target - logged_up_to_today
-            budget_tomorrow = remaining_target_tomorrow / days_left_tomorrow
-        else:
-            budget_tomorrow = None
+        
+        logged_before_today = sum(d['kcal'] for d in days if d['date'] < today_date)
+        logged_today = sum(d['kcal'] for d in days if d['date'] == today_date)
+        logged_up_to_today = logged_before_today + logged_today
+        
+        # Starting Today budget
+        if goal_cal and days_left_now > 0:
+            even_budget_starting_today = (weekly_target - logged_before_today) / days_left_now
+            remaining_today = even_budget_starting_today - logged_today
             
-        # Format budgets
-        budg_today = f"{budget_now:.0f} kcal/d" if days_left_now > 0 else "Week over"
-        budg_tom = f"{budget_tomorrow:.0f} kcal/d" if (budget_tomorrow is not None) else "Week over"
+            # Format remaining today string
+            if w_mon <= today_date <= w_sun:
+                today_day_dict = next((d for d in days if d['date'] == today_date), None)
+                today_is_completed = today_day_dict['completed'] == 1 if today_day_dict else False
+                if today_is_completed:
+                    rem_today_str = "Today is complete"
+                else:
+                    if remaining_today >= 0:
+                        rem_today_str = f"{remaining_today:.0f} kcal remaining today"
+                    else:
+                        rem_today_str = f"over by {-remaining_today:.0f} kcal today"
+            else:
+                rem_today_str = ""
+                
+            if rem_today_str:
+                budg_starting_today_str = f"{even_budget_starting_today:.0f} kcal/d ({rem_today_str})"
+            else:
+                budg_starting_today_str = f"{even_budget_starting_today:.0f} kcal/d"
+        else:
+            budg_starting_today_str = "Week over" if today_date > w_sun else "0 kcal/d"
+            if not goal_cal:
+                budg_starting_today_str = "Goal not set"
+            
+        # Starting Tomorrow budget
+        if goal_cal and days_left_tomorrow > 0:
+            budget_tomorrow = (weekly_target - logged_up_to_today) / days_left_tomorrow
+            budg_starting_tomorrow_str = f"{budget_tomorrow:.0f} kcal/d"
+        else:
+            budg_starting_tomorrow_str = "Week over"
+            if not goal_cal:
+                budg_starting_tomorrow_str = "Goal not set"
         
         # Display Stats
         if args.compact:
-            diff_cal = weekly_total - weekly_target
+            if include_today == 'no':
+                compact_total = logged_before_today
+                compact_avg = yesterday_avg
+            else:
+                compact_total = weekly_total
+                compact_avg = today_avg
+                
+            diff_cal = compact_total - weekly_target
             diff_sign = "+" if diff_cal >= 0 else ""
             
             if goal_cal:
                 target_str = f"/{weekly_target}"
                 diff_str = f" ({diff_sign}{diff_cal} kcal)"
-                avg_str = f", daily average {avg_cal:.0f}/{goal_cal} kcal"
+                avg_str = f", daily average {compact_avg:.0f}/{goal_cal} kcal"
             else:
                 target_str = ""
                 diff_str = ""
-                avg_str = f", daily average {avg_cal:.0f} kcal"
+                avg_str = f", daily average {compact_avg:.0f} kcal"
                 
-            print(f"Week {w_mon} to {w_sun}: Total {weekly_total}{target_str} kcal{diff_str}{avg_str}")
+            print(f"Week {w_mon} to {w_sun}: Total {compact_total}{target_str} kcal{diff_str}{avg_str}")
         else:
             print("\n" + "=" * 70)
             print(f"WEEK SUMMARY: {w_mon} to {w_sun}")
@@ -568,13 +613,45 @@ def cmd_stats_week(args):
             else:
                 print(f"Total: {weekly_total} kcal")
                 
-            print(f"Averages:")
-            print(f"  Completed: {completed_avg:.0f} kcal ({len(completed_days)}d)")
-            if mon_to_yesterday:
-                print(f"  Mon-Yesterday: {yesterday_avg:.0f} kcal")
-            print(f"  Mon-Today: {today_avg:.0f} kcal")
-            print(f"Budgets:")
-            print(f"  Today: {budg_today} | Tomorrow: {budg_tom}")
+            if today_date > w_sun:
+                print("Averages:")
+                print(f"  Average Mon-Sunday: {today_avg:.0f} kcal")
+                print("Budgets:")
+                print("  Budget: Week over")
+            elif today_date < w_mon:
+                print("Averages:")
+                print("  Average: -")
+                print("Budgets:")
+                if goal_cal:
+                    print(f"  Starting Monday: {goal_cal} kcal/d")
+                else:
+                    print("  Starting Monday: Goal not set")
+            else:
+                # Display Averages
+                print("Averages:")
+                if include_today == 'no':
+                    if mon_to_yesterday:
+                        print(f"  Average Mon-Yesterday: {yesterday_avg:.0f} kcal")
+                    else:
+                        print("  Average Mon-Yesterday: -")
+                elif include_today == 'yes':
+                    print(f"  Average Mon-Today: {today_avg:.0f} kcal")
+                elif include_today == 'both':
+                    if mon_to_yesterday:
+                        print(f"  Average Mon-Yesterday: {yesterday_avg:.0f} kcal")
+                    else:
+                        print("  Average Mon-Yesterday: -")
+                    print(f"  Average Mon-Today: {today_avg:.0f} kcal")
+                    
+                # Display Budgets
+                print("Budgets:")
+                if include_today == 'no':
+                    print(f"  Starting Today: {budg_starting_today_str}")
+                elif include_today == 'yes':
+                    print(f"  Starting Tomorrow: {budg_starting_tomorrow_str}")
+                elif include_today == 'both':
+                    print(f"  Starting Today: {budg_starting_today_str}")
+                    print(f"  Starting Tomorrow: {budg_starting_tomorrow_str}")
             
             # Print breakdown table
             print("-" * 70)
@@ -912,6 +989,7 @@ def main():
     s_week.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD")
     s_week.add_argument("--weeks", type=int, default=1, help="Number of weeks to show (default: 1)")
     s_week.add_argument("--compact", action="store_true", help="Print a single-line compact summary for each week")
+    s_week.add_argument("--include-today", choices=["auto", "yes", "no", "both"], default="auto", help="Include today's data in averages and budgets (default: auto)")
     
     # stats trend
     s_trend = s_sub.add_parser("trend", help="Show macronutrient rolling averages")

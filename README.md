@@ -33,7 +33,7 @@ The script supports two global options that must be placed *before* the subcomma
 ### Reports & Statistics
 
 - **Daily Stats:** `python scripts/tracker.py stats day [DATE]`
-- **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N] [--compact]`
+- **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N] [--compact] [--include-today {auto,yes,no,both}]`
 - **Rolling Trends:** `python scripts/tracker.py stats trend [--days N]`
 - **Weight History:** `python scripts/tracker.py stats weight [-N ENTRIES] [--days DAYS]` (defaults to `-N 5`)
 - **Waist History:** `python scripts/tracker.py stats waist [-N ENTRIES] [--days DAYS]` (defaults to `-N 5`)

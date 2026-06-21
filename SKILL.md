@@ -29,9 +29,13 @@ When marking a day as complete using the `complete` command, use one of the foll
 
 ## Interpreting Weekly Averages & Budgets
 
-When reviewing weekly averages using the `stats week` command, use these rules to guide the user:
-*   **If Today is Incomplete:** Ignore the Monday-to-Today average (as it will be skewed downwards by today's missing meals). Instead, look at the **Monday-to-Yesterday Average** for a true picture of progress, and use the **Daily Budget Remaining (Starting Tomorrow)** to plan subsequent days.
-*   **If Today is Complete:** Focus on the **Monday-to-Today Average** and use the **Daily Budget Remaining (Starting Now)** for any remaining snack/beverage limits.
+When reviewing weekly averages using the `stats week` command, averages and budgets are tailored dynamically to today's completion status by default (`--include-today auto`):
+*   **If Today is Incomplete:** The command excludes today's data from the active average display, showing the **Monday-to-Yesterday Average** and the **Daily Budget Starting Today** (including a dynamic helper showing remaining calories for today).
+*   **If Today is Complete:** The command includes today's data, showing the **Monday-to-Today Average** and the **Daily Budget Starting Tomorrow**.
+*   **Customizing Scope:** You can use the `--include-today` flag to force a specific behavior:
+    - `--include-today yes`: Forces inclusion of today (shows Mon-Today average and Starting Tomorrow budget).
+    - `--include-today no`: Forces exclusion of today (shows Mon-Yesterday average and Starting Today budget).
+    - `--include-today both`: Shows both sets of averages and budgets.
 
 ## CLI Reference
 
@@ -106,9 +110,9 @@ All commands support the following global flags (which must be placed *before* t
 
 *   **Show Weekly Summary:**
     ```bash
-    python scripts/tracker.py stats week [DATE] [--weeks N] [--compact]
+    python scripts/tracker.py stats week [DATE] [--weeks N] [--compact] [--include-today {auto,yes,no,both}]
     ```
-    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). Defaults to today's date (or simulated `--today` date) if `DATE` is omitted. If `--compact` is passed, it outputs a single-line summary of metrics for each week. Displays completed-day average, Mon-yesterday average, Mon-today average, future daily budget limits, and a breakdown table.
+    Summarizes the Mon-Sun week containing `DATE` (or N preceding weeks). Defaults to today's date (or simulated `--today` date) if `DATE` is omitted. If `--compact` is passed, it outputs a single-line summary of metrics for each week. Displays weekly averages and future daily budgets tailored dynamically to today's completion status (customizable via `--include-today`), along with a daily breakdown table.
 
 *   **Show Macronutrient Trends:**
     ```bash
