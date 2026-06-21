@@ -258,10 +258,36 @@ def cmd_list(args):
         return
         
     print(f"Entries for {entry_date}:")
-    for r in rows:
-        time_str = r['t'] if r['t'] else "??:??"
-        p_str = f" | {r['protein']:.1f}g P" if r['protein'] is not None else ""
-        print(f"  [{r['id']}] {time_str} [{r['meal_type']}] {r['food_name']}: {r['calories']} kcal{p_str}")
+    if getattr(args, 'no_group', False):
+        for r in rows:
+            time_str = r['t'] if r['t'] else "??:??"
+            p_str = f" | {r['protein']:.1f}g P" if r['protein'] is not None else ""
+            print(f"  [{r['id']}] {time_str} [{r['meal_type']}] {r['food_name']}: {r['calories']} kcal{p_str}")
+    else:
+        grouped = {}
+        for r in rows:
+            mt = r['meal_type']
+            if mt not in grouped:
+                grouped[mt] = {
+                    'foods': [],
+                    'calories': 0,
+                    'proteins': [],
+                    'has_protein': False
+                }
+            grouped[mt]['foods'].append(r['food_name'])
+            grouped[mt]['calories'] += r['calories']
+            if r['protein'] is not None:
+                grouped[mt]['proteins'].append(r['protein'])
+                grouped[mt]['has_protein'] = True
+                
+        for mt, data in grouped.items():
+            foods_str = ", ".join(data['foods'])
+            cal = data['calories']
+            p_str = ""
+            if data['has_protein']:
+                p_val = sum(data['proteins'])
+                p_str = f" | {p_val:.1f}g P"
+            print(f"  • {mt}: {foods_str} — {cal} kcal{p_str}")
 
 def cmd_update(args):
     conn = get_db(args.database)
@@ -409,10 +435,36 @@ def cmd_stats_day(args):
         print("No entries logged for this day.")
         return
         
-    for e in entries:
-        time_str = e['t'] if e['t'] else "??:??"
-        p_str = f", {e['protein']:.0f}g P" if e['protein'] is not None else ""
-        print(f"  [{e['id']}] {time_str} [{e['meal_type']}] {e['food_name']}: {e['calories']} kcal{p_str}")
+    if getattr(args, 'no_group', False):
+        for e in entries:
+            time_str = e['t'] if e['t'] else "??:??"
+            p_str = f", {e['protein']:.0f}g P" if e['protein'] is not None else ""
+            print(f"  [{e['id']}] {time_str} [{e['meal_type']}] {e['food_name']}: {e['calories']} kcal{p_str}")
+    else:
+        grouped = {}
+        for e in entries:
+            mt = e['meal_type']
+            if mt not in grouped:
+                grouped[mt] = {
+                    'foods': [],
+                    'calories': 0,
+                    'proteins': [],
+                    'has_protein': False
+                }
+            grouped[mt]['foods'].append(e['food_name'])
+            grouped[mt]['calories'] += e['calories']
+            if e['protein'] is not None:
+                grouped[mt]['proteins'].append(e['protein'])
+                grouped[mt]['has_protein'] = True
+                
+        for mt, data in grouped.items():
+            foods_str = ", ".join(data['foods'])
+            cal = data['calories']
+            p_str = ""
+            if data['has_protein']:
+                p_val = sum(data['proteins'])
+                p_str = f", {p_val:.0f}g P"
+            print(f"  • {mt}: {foods_str} — {cal} kcal{p_str}")
         
     print("-" * 60)
     total_cal = totals['total_cal'] if totals else 0
@@ -941,6 +993,7 @@ def main():
     # list command
     p_list = subparsers.add_parser("list", help="List food entries for a date")
     p_list.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD (defaults to today)")
+    p_list.add_argument("--no-group", action="store_true", help="Do not group entries by meal type (shows timestamps and entry IDs)")
     
     # update command
     p_upd = subparsers.add_parser("update", help="Update a food entry by ID")
@@ -983,6 +1036,7 @@ def main():
     # stats day
     s_day = s_sub.add_parser("day", help="Show daily breakdown")
     s_day.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD")
+    s_day.add_argument("--no-group", action="store_true", help="Do not group entries by meal type (shows timestamps and entry IDs)")
     
     # stats week
     s_week = s_sub.add_parser("week", help="Show weekly averages and breakdown")

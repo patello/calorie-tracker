@@ -23,7 +23,7 @@ The script supports two global options that must be placed *before* the subcomma
 
 - **Config Goal:** `python scripts/tracker.py goal CALORIES [PROTEIN]`
 - **Log Food:** `python scripts/tracker.py add "description" CALORIES [protein] [carbs] [fat] --meal TYPE`
-- **List Food:** `python scripts/tracker.py list [DATE]`
+- **List Food:** `python scripts/tracker.py list [DATE] [--no-group]` (groups by meal type by default)
 - **Update Entry:** `python scripts/tracker.py update ID [--name NAME] [--cal CALORIES] ...`
 - **Delete Entry:** `python scripts/tracker.py delete ID`
 - **Mark Complete:** `python scripts/tracker.py complete DATE [--completeness QUALITY]`
@@ -32,7 +32,7 @@ The script supports two global options that must be placed *before* the subcomma
 
 ### Reports & Statistics
 
-- **Daily Stats:** `python scripts/tracker.py stats day [DATE]`
+- **Daily Stats:** `python scripts/tracker.py stats day [DATE] [--no-group]` (groups by meal type by default)
 - **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N] [--compact] [--include-today {auto,yes,no,both}]`
 - **Rolling Trends:** `python scripts/tracker.py stats trend [--days N]`
 - **Weight History:** `python scripts/tracker.py stats weight [-N ENTRIES] [--days DAYS]` (defaults to `-N 5`)

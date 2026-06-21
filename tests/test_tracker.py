@@ -251,7 +251,7 @@ def test_stats_today(temp_db, capsys):
     capsys.readouterr()
 
     # 3. Test stats day --today 2026-06-16
-    day_args = argparse.Namespace(database=str(temp_db), date=None, today="2026-06-16")
+    day_args = argparse.Namespace(database=str(temp_db), date=None, today="2026-06-16", no_group=True)
     cmd_stats_day(day_args)
     captured = capsys.readouterr()
     assert "DAY BREAKDOWN: 2026-06-16" in captured.out
@@ -376,4 +376,65 @@ def test_stats_weight_and_waist_entries(temp_db, capsys):
         entries_type("-1")
     with pytest.raises(argparse.ArgumentTypeError):
         entries_type("abc")
+
+
+def test_cmd_list_and_stats_day_default_grouping_and_no_group(temp_db, capsys):
+    import argparse
+    from scripts.tracker import cmd_add, cmd_list, cmd_stats_day
+
+    # 1. Add some entries for testing
+    # Lunch entries
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Apple", calories=60, protein=1.0, carbs=15.0, fat=0.2, meal="lunch", date="2026-06-20", today=None
+    ))
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Banana", calories=100, protein=1.3, carbs=23.0, fat=0.3, meal="lunch", date="2026-06-20", today=None
+    ))
+    # Dinner entries
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Steak", calories=500, protein=40.0, carbs=0.0, fat=35.0, meal="dinner", date="2026-06-20", today=None
+    ))
+    cmd_add(argparse.Namespace(
+        database=str(temp_db), food_name="Broccoli", calories=40, protein=None, carbs=6.0, fat=0.0, meal="dinner", date="2026-06-20", today=None
+    ))
+
+    # Clear captured output
+    capsys.readouterr()
+
+    # 2. Test cmd_list default grouping
+    list_args = argparse.Namespace(database=str(temp_db), date="2026-06-20", no_group=False, today=None)
+    cmd_list(list_args)
+    captured = capsys.readouterr().out
+    assert "Entries for 2026-06-20:" in captured
+    assert "  • lunch: Apple, Banana — 160 kcal | 2.3g P" in captured
+    assert "  • dinner: Steak, Broccoli — 540 kcal | 40.0g P" in captured
+
+    # 3. Test cmd_list --no-group fallback
+    list_args_no_group = argparse.Namespace(database=str(temp_db), date="2026-06-20", no_group=True, today=None)
+    cmd_list(list_args_no_group)
+    captured_raw = capsys.readouterr().out
+    assert "Entries for 2026-06-20:" in captured_raw
+    assert "[1]" in captured_raw and "[lunch] Apple: 60 kcal | 1.0g P" in captured_raw
+    assert "[2]" in captured_raw and "[lunch] Banana: 100 kcal | 1.3g P" in captured_raw
+    assert "[3]" in captured_raw and "[dinner] Steak: 500 kcal | 40.0g P" in captured_raw
+    assert "[4]" in captured_raw and "[dinner] Broccoli: 40 kcal" in captured_raw
+
+    # 4. Test cmd_stats_day default grouping
+    stats_args = argparse.Namespace(database=str(temp_db), date="2026-06-20", no_group=False, today=None)
+    cmd_stats_day(stats_args)
+    captured_stats = capsys.readouterr().out
+    assert "DAY BREAKDOWN: 2026-06-20" in captured_stats
+    assert "  • lunch: Apple, Banana — 160 kcal, 2g P" in captured_stats
+    assert "  • dinner: Steak, Broccoli — 540 kcal, 40g P" in captured_stats
+
+    # 5. Test cmd_stats_day --no-group fallback
+    stats_args_no_group = argparse.Namespace(database=str(temp_db), date="2026-06-20", no_group=True, today=None)
+    cmd_stats_day(stats_args_no_group)
+    captured_stats_raw = capsys.readouterr().out
+    assert "DAY BREAKDOWN: 2026-06-20" in captured_stats_raw
+    assert "[1]" in captured_stats_raw and "[lunch] Apple: 60 kcal, 1g P" in captured_stats_raw
+    assert "[2]" in captured_stats_raw and "[lunch] Banana: 100 kcal, 1g P" in captured_stats_raw
+    assert "[3]" in captured_stats_raw and "[dinner] Steak: 500 kcal, 40g P" in captured_stats_raw
+    assert "[4]" in captured_stats_raw and "[dinner] Broccoli: 40 kcal" in captured_stats_raw
+
 

@@ -60,9 +60,9 @@ All commands support the following global flags (which must be placed *before* t
 
 *   **List Entries by ID:**
     ```bash
-    python scripts/tracker.py list [DATE]
+    python scripts/tracker.py list [DATE] [--no-group]
     ```
-    Lists all entries for `DATE` (defaults to today) with their database IDs. Use this to find IDs for updates/deletions.
+    Lists all entries for `DATE` (defaults to today). By default, entries are grouped by meal type (combining descriptions and summing calories/protein). Pass `--no-group` to disable grouping and display raw individual entries with their database IDs and timestamps (essential for updates/deletions).
 
 *   **Update Food Entry:**
     ```bash
@@ -104,9 +104,9 @@ All commands support the following global flags (which must be placed *before* t
 
 *   **Show Daily Breakdown:**
     ```bash
-    python scripts/tracker.py stats day [DATE]
+    python scripts/tracker.py stats day [DATE] [--no-group]
     ```
-    Prints the chronological list of entries (with IDs), meal-type breakdowns, and progress compared to daily goals. Defaults to today's date (or simulated `--today` date) if `DATE` is omitted.
+    Prints the chronological list of entries, meal-type breakdowns, and progress compared to daily goals. Defaults to today's date (or simulated `--today` date) if `DATE` is omitted. By default, the daily breakdown list is grouped by meal type (combining descriptions and summing calories/protein). Pass `--no-group` to disable grouping and display raw individual entries with their database IDs and timestamps.
 
 *   **Show Weekly Summary:**
     ```bash
