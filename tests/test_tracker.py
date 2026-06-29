@@ -522,25 +522,25 @@ def test_measure_commands(temp_db, capsys):
     assert "in" in out
     assert "Chest circumference flexed" in out
     
-    # 4. Log measurements for the custom type
+    # 4. Log measurements for the custom type (with optional notes)
     cmd_measure(argparse.Namespace(
-        database=str(temp_db), type="chest", value=40.5, date="2026-06-01", today=None
+        database=str(temp_db), type="chest", value=40.5, date="2026-06-01", today=None, notes="Morning"
     ))
     cmd_measure(argparse.Namespace(
-        database=str(temp_db), type="chest", value=41.25, date="2026-06-02", today=None
+        database=str(temp_db), type="chest", value=41.25, date="2026-06-02", today=None, notes="Evening"
     ))
     out = capsys.readouterr().out
-    assert "Chest logged: 40.5 in on 2026-06-01" in out
-    assert "Chest logged: 41.25 in on 2026-06-02" in out
+    assert "Chest logged: 40.5 in on 2026-06-01 | notes: Morning" in out
+    assert "Chest logged: 41.25 in on 2026-06-02 | notes: Evening" in out
     
-    # 5. Get stats for the custom type
+    # 5. Get stats for the custom type and check if notes are printed
     cmd_stats_measure(argparse.Namespace(
         database=str(temp_db), type="chest", entries=None, days=None, today="2026-06-02"
     ))
     out = capsys.readouterr().out
     assert "CHEST TRENDS (LAST 5 ENTRIES)" in out
-    assert "2026-06-01: 40.5 in" in out
-    assert "2026-06-02: 41.25 in (+0.75 in)" in out
+    assert "2026-06-01: 40.5 in | notes: Morning" in out
+    assert "2026-06-02: 41.25 in (+0.75 in) | notes: Evening" in out
     assert "Total Change: +0.75 in (from 40.5 to 41.25)" in out
     
     # 6. Delete a measurement type

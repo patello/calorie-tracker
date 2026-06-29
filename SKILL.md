@@ -96,16 +96,16 @@ All commands support the following global flags (which must be placed *before* t
 
 *   **Log Waist Circumference (Shortcut):**
     ```bash
-    python scripts/tracker.py waist CM [DATE]
+    python scripts/tracker.py waist CM [DATE] [--notes NOTES]
     ```
-    Logs waist circumference (delegates to `measure waist`).
+    Logs waist circumference with optional notes (delegates to `measure waist`).
 
 *   **Log Custom Body Measurement:**
     ```bash
-    python scripts/tracker.py measure TYPE VALUE [DATE]
+    python scripts/tracker.py measure TYPE VALUE [DATE] [--notes NOTES]
     ```
-    Logs a measurement value for a defined measurement type (e.g. waist, hips, neck, or custom defined types).
-    *Example:* `python scripts/tracker.py measure hip_upper 92.5`
+    Logs a measurement value for a defined measurement type (e.g. waist, hips, neck, or custom defined types) with optional notes.
+    *Example:* `python scripts/tracker.py measure hip_upper 92.5 --notes "Upper hip line, morning"`
 
 *   **Define Custom Measurement Type:**
     ```bash

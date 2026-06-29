@@ -74,6 +74,7 @@ def init_db(db_path):
             date TEXT NOT NULL,
             type_key TEXT NOT NULL REFERENCES measurement_types(key) ON DELETE CASCADE,
             value REAL NOT NULL,
+            notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(date, type_key)
         )
@@ -136,11 +137,16 @@ def init_db(db_path):
         )
     ''')
     
-    # Migration: Check if day_notes has 'completed' column
     c.execute("PRAGMA table_info(day_notes)")
     columns = [row['name'] for row in c.fetchall()]
     if 'completed' not in columns:
         c.execute("ALTER TABLE day_notes ADD COLUMN completed INTEGER DEFAULT 0")
+        
+    # Migration: Check if measurement_log has 'notes' column
+    c.execute("PRAGMA table_info(measurement_log)")
+    log_columns = [row['name'] for row in c.fetchall()]
+    if 'notes' not in log_columns:
+        c.execute("ALTER TABLE measurement_log ADD COLUMN notes TEXT")
         
     # Migration: Check if daily_goal has 'height_cm' column
     c.execute("PRAGMA table_info(daily_goal)")
@@ -235,6 +241,7 @@ def init_db(db_path):
             date,
             type_key,
             value,
+            notes,
             ROUND(value - LAG(value) OVER (PARTITION BY type_key ORDER BY date), 2) as change_val,
             CASE 
                 WHEN type_key = 'waist' THEN ROUND(value / (SELECT COALESCE(height_cm, 180.0) FROM daily_goal WHERE id = 1), 2)
@@ -505,13 +512,16 @@ def cmd_measure(args):
     type_name = row['name']
     unit = row['unit']
     
+    notes = args.notes if hasattr(args, 'notes') else None
+    
     c.execute('''
-        INSERT OR REPLACE INTO measurement_log (date, type_key, value)
-        VALUES (?, ?, ?)
-    ''', (target_date, t_key, args.value))
+        INSERT OR REPLACE INTO measurement_log (date, type_key, value, notes)
+        VALUES (?, ?, ?, ?)
+    ''', (target_date, t_key, args.value, notes))
     conn.commit()
     conn.close()
-    print(f"{type_name} logged: {format_value(args.value)} {unit} on {target_date}")
+    notes_str = f" | notes: {notes}" if notes else ""
+    print(f"{type_name} logged: {format_value(args.value)} {unit} on {target_date}{notes_str}")
 
 def cmd_measure_type(args):
     conn = get_db(args.database)
@@ -999,7 +1009,7 @@ def cmd_stats_measure(args):
     if entries is None and days is None:
         entries = 5
         
-    query = 'SELECT date, value, whtr, change_val FROM v_measurement_summary WHERE type_key = ? AND date <= ?'
+    query = 'SELECT date, value, notes, whtr, change_val FROM v_measurement_summary WHERE type_key = ? AND date <= ?'
     params = [type_key, today_str]
     
     if days is not None:
@@ -1037,6 +1047,7 @@ def cmd_stats_measure(args):
         val = r['value']
         ch = r['change_val']
         whtr = r['whtr']
+        notes = r['notes']
         
         val_str = format_value(val)
         ch_str = format_change(ch, unit)
@@ -1046,7 +1057,8 @@ def cmd_stats_measure(args):
             whtr_str = f"{whtr:.2f}" if whtr is not None else "N/A"
             extra_str = f" | WHtR: {whtr_str}"
             
-        print(f"  {r['date']}: {val_str} {unit}{ch_str}{extra_str}")
+        notes_str = f" | notes: {notes}" if notes else ""
+        print(f"  {r['date']}: {val_str} {unit}{ch_str}{extra_str}{notes_str}")
         
     if len(rows) >= 2:
         change = rows[-1]['value'] - rows[0]['value']
@@ -1223,12 +1235,14 @@ def main():
     p_wa = subparsers.add_parser("waist", help="Log waist circumference")
     p_wa.add_argument("cm", type=float, help="Waist circumference in cm")
     p_wa.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD")
+    p_wa.add_argument("--notes", help="Optional notes/annotations for this waist entry")
     
     # measure command
     p_me = subparsers.add_parser("measure", help="Log a body measurement")
     p_me.add_argument("type", help="Measurement type (e.g. waist, hips, body_fat)")
     p_me.add_argument("value", type=float, help="Measurement value")
     p_me.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD (defaults to today)")
+    p_me.add_argument("--notes", help="Optional notes/annotations for this measurement entry")
     
     # measure-type command group
     p_mt = subparsers.add_parser("measure-type", help="Manage measurement types")
