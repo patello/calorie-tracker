@@ -29,6 +29,7 @@ The script supports two global options that must be placed *before* the subcomma
 - **Mark Complete:** `python scripts/tracker.py complete DATE [--completeness QUALITY]`
 - **Check Complete:** `python scripts/tracker.py check-complete [DATE]`
 - **Log Weight/Waist/Measurement:** `python scripts/tracker.py weight KG` / `python scripts/tracker.py waist CM` / `python scripts/tracker.py measure TYPE VALUE`
+  *(Note: Default types `waist`, `hips`, and `neck` are pre-seeded automatically. The key `waist` is specifically used to compute Waist-to-Height Ratio (WHtR) and power the legacy shortcut.)*
 
 ### Reports & Statistics
 

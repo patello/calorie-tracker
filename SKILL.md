@@ -105,6 +105,7 @@ All commands support the following global flags (which must be placed *before* t
     python scripts/tracker.py measure TYPE VALUE [DATE] [--notes NOTES]
     ```
     Logs a measurement value for a defined measurement type (e.g. waist, hips, neck, or custom defined types) with optional notes.
+    *(Note: Default types `waist`, `hips`, and `neck` are pre-seeded automatically. The key `waist` is specifically used to compute Waist-to-Height Ratio (WHtR) and power the `waist` shortcut.)*
     *Example:* `python scripts/tracker.py measure hip_upper 92.5 --notes "Upper hip line, morning"`
 
 *   **Define Custom Measurement Type:**
