@@ -28,7 +28,7 @@ The script supports two global options that must be placed *before* the subcomma
 - **Delete Entry:** `python scripts/tracker.py delete ID`
 - **Mark Complete:** `python scripts/tracker.py complete DATE [--completeness QUALITY]`
 - **Check Complete:** `python scripts/tracker.py check-complete [DATE]`
-- **Log Weight/Waist:** `python scripts/tracker.py weight KG` / `python scripts/tracker.py waist CM`
+- **Log Weight/Waist/Measurement:** `python scripts/tracker.py weight KG` / `python scripts/tracker.py waist CM` / `python scripts/tracker.py measure TYPE VALUE`
 
 ### Reports & Statistics
 
@@ -36,6 +36,7 @@ The script supports two global options that must be placed *before* the subcomma
 - **Weekly Stats:** `python scripts/tracker.py stats week [DATE] [--weeks N] [--compact] [--include-today {auto,yes,no,both}]`
 - **Rolling Trends:** `python scripts/tracker.py stats trend [--days N]`
 - **Weight History:** `python scripts/tracker.py stats weight [-N ENTRIES] [--days DAYS]` (defaults to `-N 5`)
-- **Waist History:** `python scripts/tracker.py stats waist [-N ENTRIES] [--days DAYS]` (defaults to `-N 5`)
+- **Waist/Measurement History:** `python scripts/tracker.py stats waist` / `python scripts/tracker.py stats measure TYPE [-N ENTRIES] [--days DAYS]`
 
 For detailed operational rules and specifications, see [SKILL.md](SKILL.md).
+

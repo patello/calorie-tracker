@@ -57,17 +57,67 @@ def init_db(db_path):
         )
     ''')
     
-    # Body measurements (cm)
+    # Dynamic body measurements schema
     c.execute('''
-        CREATE TABLE IF NOT EXISTS body_measurements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL UNIQUE,
-            waist_cm REAL,
-            hips_cm REAL,
-            neck_cm REAL,
+        CREATE TABLE IF NOT EXISTS measurement_types (
+            key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            unit TEXT NOT NULL,
+            description TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS measurement_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            type_key TEXT NOT NULL REFERENCES measurement_types(key) ON DELETE CASCADE,
+            value REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(date, type_key)
+        )
+    ''')
+
+    # Migration from legacy body_measurements table
+    c.execute("SELECT type FROM sqlite_master WHERE name = 'body_measurements'")
+    res = c.fetchone()
+    if res and res[0] == 'table':
+        # Fetch existing legacy measurements
+        c.execute("SELECT date, waist_cm, hips_cm, neck_cm, created_at FROM body_measurements")
+        old_rows = c.fetchall()
+        
+        # Seed default measurement types
+        c.execute("INSERT OR IGNORE INTO measurement_types (key, name, unit, description) VALUES ('waist', 'Waist', 'cm', 'Waist circumference')")
+        c.execute("INSERT OR IGNORE INTO measurement_types (key, name, unit, description) VALUES ('hips', 'Hips', 'cm', 'Hips circumference')")
+        c.execute("INSERT OR IGNORE INTO measurement_types (key, name, unit, description) VALUES ('neck', 'Neck', 'cm', 'Neck circumference')")
+        
+        for row in old_rows:
+            date_val, waist_cm, hips_cm, neck_cm, created_at = row
+            if waist_cm is not None:
+                c.execute('''
+                    INSERT OR IGNORE INTO measurement_log (date, type_key, value, created_at)
+                    VALUES (?, 'waist', ?, ?)
+                ''', (date_val, waist_cm, created_at))
+            if hips_cm is not None:
+                c.execute('''
+                    INSERT OR IGNORE INTO measurement_log (date, type_key, value, created_at)
+                    VALUES (?, 'hips', ?, ?)
+                ''', (date_val, hips_cm, created_at))
+            if neck_cm is not None:
+                c.execute('''
+                    INSERT OR IGNORE INTO measurement_log (date, type_key, value, created_at)
+                    VALUES (?, 'neck', ?, ?)
+                ''', (date_val, neck_cm, created_at))
+        
+        c.execute("DROP TABLE body_measurements")
+        
+    # Seed default types if not already seeded
+    c.execute("SELECT COUNT(*) FROM measurement_types")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO measurement_types (key, name, unit, description) VALUES ('waist', 'Waist', 'cm', 'Waist circumference')")
+        c.execute("INSERT INTO measurement_types (key, name, unit, description) VALUES ('hips', 'Hips', 'cm', 'Hips circumference')")
+        c.execute("INSERT INTO measurement_types (key, name, unit, description) VALUES ('neck', 'Neck', 'cm', 'Neck circumference')")
     
     # Daily notes/annotations
     c.execute('''
@@ -163,16 +213,46 @@ def init_db(db_path):
         FROM weight_log
     ''')
     
+    c.execute("DROP VIEW IF EXISTS body_measurements")
+    c.execute('''
+        CREATE VIEW body_measurements AS
+        SELECT 
+            MIN(id) as id,
+            date,
+            MAX(CASE WHEN type_key = 'waist' THEN value END) as waist_cm,
+            MAX(CASE WHEN type_key = 'hips' THEN value END) as hips_cm,
+            MAX(CASE WHEN type_key = 'neck' THEN value END) as neck_cm,
+            MAX(created_at) as created_at
+        FROM measurement_log
+        GROUP BY date
+    ''')
+
+    c.execute("DROP VIEW IF EXISTS v_measurement_summary")
+    c.execute('''
+        CREATE VIEW v_measurement_summary AS
+        SELECT 
+            id,
+            date,
+            type_key,
+            value,
+            ROUND(value - LAG(value) OVER (PARTITION BY type_key ORDER BY date), 2) as change_val,
+            CASE 
+                WHEN type_key = 'waist' THEN ROUND(value / (SELECT COALESCE(height_cm, 180.0) FROM daily_goal WHERE id = 1), 2)
+                ELSE NULL
+            END as whtr
+        FROM measurement_log
+    ''')
+
     c.execute("DROP VIEW IF EXISTS v_waist_summary")
     c.execute('''
         CREATE VIEW v_waist_summary AS
         SELECT 
             date,
-            waist_cm,
-            ROUND(waist_cm / (SELECT COALESCE(height_cm, 180.0) FROM daily_goal WHERE id = 1), 2) as whtr,
-            ROUND(waist_cm - LAG(waist_cm) OVER (ORDER BY date), 1) as change_cm
-        FROM body_measurements
-        WHERE waist_cm IS NOT NULL
+            value as waist_cm,
+            whtr,
+            change_val as change_cm
+        FROM v_measurement_summary
+        WHERE type_key = 'waist' AND value IS NOT NULL
     ''')
     
     conn.commit()
@@ -390,17 +470,100 @@ def cmd_weight(args):
     conn.close()
     print(f"Weight logged: {args.kg} kg on {target_date}")
 
+def format_value(val):
+    if val is None:
+        return ""
+    if abs(val - round(val, 1)) < 1e-9:
+        return f"{val:.1f}"
+    return f"{val:.2f}"
+
+def format_change(change, unit):
+    if change is None:
+        return ""
+    val_str = format_value(abs(change))
+    sign = "+" if change >= 0 else "-"
+    return f" ({sign}{val_str} {unit})"
+
 def cmd_waist(args):
+    args.type = 'waist'
+    args.value = args.cm
+    cmd_measure(args)
+
+def cmd_measure(args):
     target_date = args.date or args.today or date.today().isoformat()
     conn = get_db(args.database)
     c = conn.cursor()
+    
+    t_key = args.type.lower()
+    row = c.execute("SELECT name, unit FROM measurement_types WHERE key = ?", (t_key,)).fetchone()
+    if not row:
+        print(f"Error: Measurement type '{t_key}' is not defined.")
+        print(f"Define it first using: python scripts/tracker.py measure-type define {t_key} \"Name\" UNIT")
+        conn.close()
+        sys.exit(1)
+        
+    type_name = row['name']
+    unit = row['unit']
+    
     c.execute('''
-        INSERT OR REPLACE INTO body_measurements (date, waist_cm)
-        VALUES (?, ?)
-    ''', (target_date, args.cm))
+        INSERT OR REPLACE INTO measurement_log (date, type_key, value)
+        VALUES (?, ?, ?)
+    ''', (target_date, t_key, args.value))
     conn.commit()
     conn.close()
-    print(f"Waist logged: {args.cm} cm on {target_date}")
+    print(f"{type_name} logged: {format_value(args.value)} {unit} on {target_date}")
+
+def cmd_measure_type(args):
+    conn = get_db(args.database)
+    c = conn.cursor()
+    
+    if args.measure_type_command == "define":
+        key = args.key.lower()
+        if not key.replace('_', '').isalnum():
+            print("Error: Key must contain only letters, numbers, and underscores.")
+            conn.close()
+            sys.exit(1)
+            
+        c.execute('''
+            INSERT OR REPLACE INTO measurement_types (key, name, unit, description)
+            VALUES (?, ?, ?, ?)
+        ''', (key, args.name, args.unit, args.desc))
+        conn.commit()
+        print(f"Measurement type '{key}' defined: {args.name} ({args.unit})")
+        if args.desc:
+            print(f"  Description: {args.desc}")
+            
+    elif args.measure_type_command == "list":
+        rows = c.execute("SELECT key, name, unit, description FROM measurement_types ORDER BY key").fetchall()
+        if not rows:
+            print("No measurement types defined.")
+        else:
+            print("-" * 80)
+            print(f"{'Key':<15} | {'Name':<20} | {'Unit':<10} | Description")
+            print("-" * 80)
+            for r in rows:
+                desc = r['description'] or ""
+                print(f"{r['key']:<15} | {r['name']:<20} | {r['unit']:<10} | {desc}")
+            print("-" * 80)
+            
+    elif args.measure_type_command == "delete":
+        key = args.key.lower()
+        row = c.execute("SELECT name FROM measurement_types WHERE key = ?", (key,)).fetchone()
+        if not row:
+            print(f"Error: Measurement type '{key}' does not exist.")
+            conn.close()
+            sys.exit(1)
+            
+        if key in ('waist', 'hips', 'neck'):
+            print(f"Error: Cannot delete system default measurement type '{key}'.")
+            conn.close()
+            sys.exit(1)
+            
+        c.execute("DELETE FROM measurement_types WHERE key = ?", (key,))
+        conn.commit()
+        print(f"Measurement type '{key}' and all associated log entries deleted.")
+        
+    conn.close()
 
 # ----------------- Statistics & Reports -----------------
 
@@ -813,8 +976,22 @@ def cmd_stats_weight(args):
     print("-" * 60)
 
 def cmd_stats_waist(args):
+    args.type = 'waist'
+    cmd_stats_measure(args)
+
+def cmd_stats_measure(args):
     conn = get_db(args.database)
     today_str = args.today or date.today().isoformat()
+    
+    type_key = args.type.lower()
+    t_row = conn.execute("SELECT name, unit FROM measurement_types WHERE key = ?", (type_key,)).fetchone()
+    if not t_row:
+        print(f"Error: Measurement type '{type_key}' is not defined.")
+        conn.close()
+        sys.exit(1)
+        
+    type_name = t_row['name']
+    unit = t_row['unit']
     
     entries = args.entries
     days = args.days
@@ -822,8 +999,8 @@ def cmd_stats_waist(args):
     if entries is None and days is None:
         entries = 5
         
-    query = 'SELECT date, waist_cm, whtr, change_cm FROM v_waist_summary WHERE date <= ?'
-    params = [today_str]
+    query = 'SELECT date, value, whtr, change_val FROM v_measurement_summary WHERE type_key = ? AND date <= ?'
+    params = [type_key, today_str]
     
     if days is not None:
         query += ' AND date >= date(?, ?)'
@@ -839,31 +1016,49 @@ def cmd_stats_waist(args):
     conn.close()
     
     print("-" * 60)
+    header_name = type_name.upper()
     if entries is not None and days is not None:
-        header = f"WAIST TRENDS (LAST {entries} ENTRIES OVER LAST {days} DAYS)"
+        header = f"{header_name} TRENDS (LAST {entries} ENTRIES OVER LAST {days} DAYS)"
     elif entries is not None:
-        header = f"WAIST TRENDS (LAST {entries} ENTRIES)" if entries != "all" else "WAIST TRENDS (ALL ENTRIES)"
+        header = f"{header_name} TRENDS (LAST {entries} ENTRIES)" if entries != "all" else f"{header_name} TRENDS (ALL ENTRIES)"
     else:
-        header = f"WAIST TRENDS (LAST {days} DAYS)"
+        header = f"{header_name} TRENDS (LAST {days} DAYS)"
     print(header)
     print("-" * 60)
     
     if not rows:
-        print("No waist logs found.")
+        print(f"No {type_key} logs found.")
         return
         
     rows = list(rows)
     rows.reverse()
-        
+    
     for r in rows:
-        ch_str = f" ({r['change_cm']:+.1f} cm)" if r['change_cm'] is not None else ""
-        whtr_str = f"{r['whtr']:.2f}" if r['whtr'] is not None else "N/A"
-        print(f"  {r['date']}: {r['waist_cm']:.1f} cm{ch_str} | WHtR: {whtr_str}")
+        val = r['value']
+        ch = r['change_val']
+        whtr = r['whtr']
+        
+        val_str = format_value(val)
+        ch_str = format_change(ch, unit)
+        
+        extra_str = ""
+        if type_key == 'waist':
+            whtr_str = f"{whtr:.2f}" if whtr is not None else "N/A"
+            extra_str = f" | WHtR: {whtr_str}"
+            
+        print(f"  {r['date']}: {val_str} {unit}{ch_str}{extra_str}")
         
     if len(rows) >= 2:
-        change = rows[-1]['waist_cm'] - rows[0]['waist_cm']
+        change = rows[-1]['value'] - rows[0]['value']
+        val_start = format_value(rows[0]['value'])
+        val_end = format_value(rows[-1]['value'])
+        change_str = f"{change:+.1f}" if abs(change - round(change, 1)) < 1e-9 else f"{change:+.2f}"
+        if change == 0.0:
+            change_str = "+0.0"
+        elif change > 0 and not change_str.startswith("+"):
+            change_str = "+" + change_str
         print("-" * 60)
-        print(f"Total Change: {change:+.1f} cm (from {rows[0]['waist_cm']:.1f} to {rows[-1]['waist_cm']:.1f})")
+        print(f"Total Change: {change_str} {unit} (from {val_start} to {val_end})")
     print("-" * 60)
 
 def cmd_search(args):
@@ -1029,6 +1224,30 @@ def main():
     p_wa.add_argument("cm", type=float, help="Waist circumference in cm")
     p_wa.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD")
     
+    # measure command
+    p_me = subparsers.add_parser("measure", help="Log a body measurement")
+    p_me.add_argument("type", help="Measurement type (e.g. waist, hips, body_fat)")
+    p_me.add_argument("value", type=float, help="Measurement value")
+    p_me.add_argument("date", nargs="?", default=None, help="Date YYYY-MM-DD (defaults to today)")
+    
+    # measure-type command group
+    p_mt = subparsers.add_parser("measure-type", help="Manage measurement types")
+    mt_sub = p_mt.add_subparsers(dest="measure_type_command", required=True)
+    
+    # measure-type define
+    mt_def = mt_sub.add_parser("define", help="Define a custom measurement type")
+    mt_def.add_argument("key", help="Unique key for the type (lowercase alphanumeric + underscores)")
+    mt_def.add_argument("name", help="Display name (e.g. 'Hip (Upper)')")
+    mt_def.add_argument("unit", help="Measurement unit (e.g. cm, in, %)")
+    mt_def.add_argument("--desc", help="Optional description of measurement point")
+    
+    # measure-type list
+    mt_list = mt_sub.add_parser("list", help="List all defined measurement types")
+    
+    # measure-type delete
+    mt_del = mt_sub.add_parser("delete", help="Delete a measurement type")
+    mt_del.add_argument("key", help="Key of the measurement type to delete")
+    
     # stats command group
     p_stats = subparsers.add_parser("stats", help="Get statistics and reports")
     s_sub = p_stats.add_subparsers(dest="stats_command", required=True)
@@ -1058,6 +1277,12 @@ def main():
     s_wa = s_sub.add_parser("waist", help="Show waist logs and changes")
     s_wa.add_argument("-N", "--entries", type=entries_type, default=None, help="Number of entries to show (positive integer or 'all')")
     s_wa.add_argument("--days", type=int, default=None, help="Number of days to look back")
+    
+    # stats measure
+    s_me = s_sub.add_parser("measure", help="Show logs and changes for a specific measurement type")
+    s_me.add_argument("type", help="Measurement type key (e.g. waist, hips, body_fat)")
+    s_me.add_argument("-N", "--entries", type=entries_type, default=None, help="Number of entries to show (positive integer or 'all')")
+    s_me.add_argument("--days", type=int, default=None, help="Number of days to look back")
     
     # search command
     p_search = subparsers.add_parser("search", help="Search previously registered foods")
@@ -1089,6 +1314,10 @@ def main():
         cmd_weight(args)
     elif args.command == "waist":
         cmd_waist(args)
+    elif args.command == "measure":
+        cmd_measure(args)
+    elif args.command == "measure-type":
+        cmd_measure_type(args)
     elif args.command == "stats":
         if args.stats_command == "day":
             cmd_stats_day(args)
@@ -1100,6 +1329,8 @@ def main():
             cmd_stats_weight(args)
         elif args.stats_command == "waist":
             cmd_stats_waist(args)
+        elif args.stats_command == "measure":
+            cmd_stats_measure(args)
     elif args.command == "search":
         cmd_search(args)
 

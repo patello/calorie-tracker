@@ -19,9 +19,15 @@ def test_database_init(temp_db):
     assert "entries" in table_names
     assert "daily_goal" in table_names
     assert "weight_log" in table_names
-    assert "body_measurements" in table_names
+    assert "measurement_types" in table_names
+    assert "measurement_log" in table_names
     assert "day_notes" in table_names
     assert "meal_types" in table_names
+    
+    # Check if body_measurements exists as a view
+    views = conn.execute("SELECT name FROM sqlite_master WHERE type='view'").fetchall()
+    view_names = [v['name'] for v in views]
+    assert "body_measurements" in view_names
     
     # Check if 'completed' column exists in day_notes
     columns = conn.execute("PRAGMA table_info(day_notes)").fetchall()
@@ -436,5 +442,113 @@ def test_cmd_list_and_stats_day_default_grouping_and_no_group(temp_db, capsys):
     assert "[2]" in captured_stats_raw and "[lunch] Banana: 100 kcal, 1g P" in captured_stats_raw
     assert "[3]" in captured_stats_raw and "[dinner] Steak: 500 kcal, 40g P" in captured_stats_raw
     assert "[4]" in captured_stats_raw and "[dinner] Broccoli: 40 kcal" in captured_stats_raw
+
+
+def test_legacy_database_migration(tmp_path):
+    import sqlite3
+    from scripts.tracker import init_db
+    
+    db_file = tmp_path / "legacy_test.db"
+    
+    # 1. Create legacy schema
+    conn = sqlite3.connect(db_file)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE body_measurements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            waist_cm REAL,
+            hips_cm REAL,
+            neck_cm REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute("INSERT INTO body_measurements (date, waist_cm, hips_cm, neck_cm) VALUES ('2026-06-01', 90.0, 100.0, 38.0)")
+    c.execute("INSERT INTO body_measurements (date, waist_cm, hips_cm, neck_cm) VALUES ('2026-06-02', 89.5, 99.5, NULL)")
+    conn.commit()
+    conn.close()
+    
+    # 2. Run init_db which triggers migration
+    init_db(db_file)
+    
+    # 3. Connect and verify migrated values
+    conn = sqlite3.connect(db_file)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    
+    # Check if view body_measurements works
+    rows = c.execute("SELECT date, waist_cm, hips_cm, neck_cm FROM body_measurements ORDER BY date").fetchall()
+    assert len(rows) == 2
+    assert rows[0]['date'] == '2026-06-01'
+    assert rows[0]['waist_cm'] == 90.0
+    assert rows[0]['hips_cm'] == 100.0
+    assert rows[0]['neck_cm'] == 38.0
+    
+    assert rows[1]['date'] == '2026-06-02'
+    assert rows[1]['waist_cm'] == 89.5
+    assert rows[1]['hips_cm'] == 99.5
+    assert rows[1]['neck_cm'] is None
+    
+    # Check if measurement_log table exists and is populated
+    log_rows = c.execute("SELECT date, type_key, value FROM measurement_log ORDER BY date, type_key").fetchall()
+    assert len(log_rows) == 5
+    
+    conn.close()
+
+
+def test_measure_commands(temp_db, capsys):
+    import argparse
+    from scripts.tracker import cmd_measure, cmd_measure_type, cmd_stats_measure
+    
+    # 1. List default types
+    cmd_measure_type(argparse.Namespace(database=str(temp_db), measure_type_command="list"))
+    out = capsys.readouterr().out
+    assert "waist" in out
+    assert "hips" in out
+    assert "neck" in out
+    
+    # 2. Define a custom measurement type
+    cmd_measure_type(argparse.Namespace(
+        database=str(temp_db), measure_type_command="define", key="chest", name="Chest", unit="in", desc="Chest circumference flexed"
+    ))
+    out = capsys.readouterr().out
+    assert "Measurement type 'chest' defined: Chest (in)" in out
+    
+    # 3. List types and verify custom type exists
+    cmd_measure_type(argparse.Namespace(database=str(temp_db), measure_type_command="list"))
+    out = capsys.readouterr().out
+    assert "chest" in out
+    assert "Chest" in out
+    assert "in" in out
+    assert "Chest circumference flexed" in out
+    
+    # 4. Log measurements for the custom type
+    cmd_measure(argparse.Namespace(
+        database=str(temp_db), type="chest", value=40.5, date="2026-06-01", today=None
+    ))
+    cmd_measure(argparse.Namespace(
+        database=str(temp_db), type="chest", value=41.25, date="2026-06-02", today=None
+    ))
+    out = capsys.readouterr().out
+    assert "Chest logged: 40.5 in on 2026-06-01" in out
+    assert "Chest logged: 41.25 in on 2026-06-02" in out
+    
+    # 5. Get stats for the custom type
+    cmd_stats_measure(argparse.Namespace(
+        database=str(temp_db), type="chest", entries=None, days=None, today="2026-06-02"
+    ))
+    out = capsys.readouterr().out
+    assert "CHEST TRENDS (LAST 5 ENTRIES)" in out
+    assert "2026-06-01: 40.5 in" in out
+    assert "2026-06-02: 41.25 in (+0.75 in)" in out
+    assert "Total Change: +0.75 in (from 40.5 to 41.25)" in out
+    
+    # 6. Delete a measurement type
+    cmd_measure_type(argparse.Namespace(
+        database=str(temp_db), measure_type_command="delete", key="chest"
+    ))
+    out = capsys.readouterr().out
+    assert "Measurement type 'chest' and all associated log entries deleted." in out
+
 
 

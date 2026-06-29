@@ -94,11 +94,37 @@ All commands support the following global flags (which must be placed *before* t
     ```
     Logs weight for the specified date (defaults to today).
 
-*   **Log Waist Circumference:**
+*   **Log Waist Circumference (Shortcut):**
     ```bash
     python scripts/tracker.py waist CM [DATE]
     ```
-    Logs waist circumference for the specified date (defaults to today).
+    Logs waist circumference (delegates to `measure waist`).
+
+*   **Log Custom Body Measurement:**
+    ```bash
+    python scripts/tracker.py measure TYPE VALUE [DATE]
+    ```
+    Logs a measurement value for a defined measurement type (e.g. waist, hips, neck, or custom defined types).
+    *Example:* `python scripts/tracker.py measure hip_upper 92.5`
+
+*   **Define Custom Measurement Type:**
+    ```bash
+    python scripts/tracker.py measure-type define KEY DISPLAY_NAME UNIT [--desc DESCRIPTION]
+    ```
+    Defines a custom measurement point with display name, unit, and optional description.
+    *Example:* `python scripts/tracker.py measure-type define hip_upper "Hip (Upper)" cm --desc "Upper hip line"`
+
+*   **List Defined Measurement Types:**
+    ```bash
+    python scripts/tracker.py measure-type list
+    ```
+    Lists all defined measurement types, units, and descriptions.
+
+*   **Delete Custom Measurement Type:**
+    ```bash
+    python scripts/tracker.py measure-type delete KEY
+    ```
+    Deletes the type definition and all associated logs. Default types (`waist`, `hips`, `neck`) cannot be deleted.
 
 ### 2. Statistics & Reports
 
@@ -126,8 +152,15 @@ All commands support the following global flags (which must be placed *before* t
     ```
     Displays logged weights, BMI, and weight changes up to today. Defaults to showing the last 5 entries (`-N 5`). Supports a positive integer or `"all"` for `-N`, and an integer number of days for `--days`.
 
-*   **Show Waist logs:**
+*   **Show Waist logs (Shortcut):**
     ```bash
     python scripts/tracker.py stats waist [-N ENTRIES] [--days DAYS]
     ```
-    Displays logged waist measurements, WHtR, and waist changes up to today. Defaults to showing the last 5 entries (`-N 5`). Supports a positive integer or `"all"` for `-N`, and an integer number of days for `--days`.
+    Displays logged waist measurements, WHtR, and waist changes. Defaults to showing the last 5 entries (`-N 5`).
+
+*   **Show Custom Measurement logs:**
+    ```bash
+    python scripts/tracker.py stats measure TYPE [-N ENTRIES] [--days DAYS]
+    ```
+    Displays logs, unit, and calculated changes for any defined measurement type. If `TYPE` is `waist`, also prints WHtR.
+    *Example:* `python scripts/tracker.py stats measure chest -N 10`
