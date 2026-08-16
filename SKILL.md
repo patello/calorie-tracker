@@ -88,11 +88,11 @@ All commands support the following global flags (which must be placed *before* t
     ```
     Exits with code `0` if the date is fully completed (`completeness == 'full'` and `completed == 1`), otherwise exits with `1`.
 
-*   **Log Body Weight:**
+*   **Log Body Weight (Shortcut):**
     ```bash
-    python3 scripts/tracker.py weight KG [DATE]
+    python3 scripts/tracker.py weight KG [DATE] [--notes NOTES]
     ```
-    Logs weight for the specified date (defaults to today).
+    Logs weight for the specified date (defaults to today). Weight is a first-class measurement type (`weight`), so this delegates to `measure weight` — there is a single source of truth for all body data.
 
 *   **Log Waist Circumference (Shortcut):**
     ```bash
@@ -104,7 +104,7 @@ All commands support the following global flags (which must be placed *before* t
     ```bash
     python3 scripts/tracker.py measure TYPE VALUE [DATE] [--notes NOTES]
     ```
-    Logs a measurement value for a defined measurement type (e.g. waist, hips, neck, or custom defined types) with optional notes.
+    Logs a measurement value for a defined measurement type (e.g. waist, hips, neck, weight, or custom defined types) with optional notes. This is the canonical way body data is stored — short commands like `weight` and `waist` are conveniences delegating here.
     *(Note: Default types `waist`, `hips`, and `neck` are pre-seeded automatically. The key `waist` is specifically used to compute Waist-to-Height Ratio (WHtR) and power the `waist` shortcut.)*
     *Example:* `python3 scripts/tracker.py measure hip_upper 92.5 --notes "Upper hip line, morning"`
 
@@ -151,7 +151,7 @@ All commands support the following global flags (which must be placed *before* t
     ```bash
     python3 scripts/tracker.py stats weight [-N ENTRIES] [--days DAYS]
     ```
-    Displays logged weights, BMI, and weight changes up to today. Defaults to showing the last 5 entries (`-N 5`). Supports a positive integer or `"all"` for `-N`, and an integer number of days for `--days`.
+    Displays logged weights, BMI (computed from the stored height), and weight changes up to today. Reads from the `weight` measurement type. Defaults to showing the last 5 entries (`-N 5`). Supports a positive integer or `"all"` for `-N`, and an integer number of days for `--days`.
 
 *   **Show Waist logs (Shortcut):**
     ```bash
